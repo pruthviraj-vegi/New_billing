@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% load static %}
+{% load custom_filters %}
+{% block title %}
+  Suppliers Management
+{% endblock title %}
+{% block content %}
+  <!-- Page Header -->
+  <div class="page-header">
+    <h2 class="page-title">Suppliers</h2>
+    <div class="page-actions">
+      <a href="{% url 'supplier:dashboard' %}" class="btn btn-info">
+        <i class="fas fa-chart-line"></i>
+        Dashboard
+      </a>
+      <a href="#" class="btn btn-secondary">
+        <i class="fas fa-download"></i>
+        Download Data
+      </a>
+      <a href="{% url 'supplier:create' %}" class="btn btn-primary">
+        <i class="fas fa-plus"></i>
+        Add Supplier
+      </a>
+    </div>
+  </div>
+  <!-- Breadcrumb Navigation -->
+  <nav class="breadcrumb breadcrumb-right">
+    <a href="{% url 'base:home' %}" class="breadcrumb-item">Dashboard</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="{% url 'supplier:dashboard' %}" class="breadcrumb-item">Supplier Dashboard</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-active">All Suppliers</span>
+  </nav>
+  <!-- Search and Filter Section -->
+  <div class="search-filter-section">
+    <form method="get" class="search-filter-form" id="searchForm">
+      <div class="search-group search-expanded">
+        <i class="fas fa-search search-icon"></i>
+        <input type="search"
+               name="search"
+               value="{{ search_query }}"
+               class="search-input"
+               placeholder="Search suppliers by name, contact, phone, email, or GSTIN..."
+               id="searchInput"
+               autofocus />
+        <i class="fas fa-search search-icon"></i>
+      </div>
+      <select name="status" class="filter-select">
+        <option value="">All Status</option>
+        <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+        <option value="inactive"
+                {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+      </select>
+      <select name="sort" class="filter-select">
+        <option value="-created_at"
+                {% if sort_by == '-created_at' %}selected{% endif %}>Newest First</option>
+        <option value="created_at"
+                {% if sort_by == 'created_at' %}selected{% endif %}>Oldest First</option>
+        <option value="name" {% if sort_by == 'name' %}selected{% endif %}>Name A-Z</option>
+        <option value="-name" {% if sort_by == '-name' %}selected{% endif %}>Name Z-A</option>
+        <option value="contact_person"
+                {% if sort_by == 'contact_person' %}selected{% endif %}>Contact Person A-Z</option>
+        <option value="-contact_person"
+                {% if sort_by == '-contact_person' %}selected{% endif %}>Contact Person Z-A</option>
+      </select>
+      <button type="submit" class="btn btn-primary">
+        <i class="fas fa-search"></i>
+        Search
+      </button>
+    </form>
+  </div>
+  <!-- Suppliers Table -->
+  <div class="table-container">
+    {% if data %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Supplier Name</th>
+            <th>Address</th>
+            <th>Phone</th>
+            <th>GSTIN</th>
+            <th>Status</th>
+            <th>Balance Due</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for supplier in data %}
+            <tr>
+              <td>{{ supplier.id }}</td>
+              <td>
+                <div class="supplier-info">
+                  <strong>{{ supplier.name }}</strong>
+                  <br>
+                  {% if supplier.contact_person %}<small class="secondary-text text-muted">{{ supplier.contact_person|default:"-" }}</small>{% endif %}
+                </div>
+              </td>
+              <td>{{ supplier.address|truncatechars:15|default:"-" }}</td>
+              <td>
+                {{ supplier.phone }}
+                <br>
+                <small class="secondary-text text-muted">{{ supplier.email|default:"-" }}</small>
+              </td>
+              <td>{{ supplier.gstin|default:"-" }}</td>
+              <td>
+                {% if supplier.is_deleted %}
+                  <span class="badge text-danger">Inactive</span>
+                {% else %}
+                  <span class="badge text-success">Active</span>
+                {% endif %}
+              </td>
+              <td>{{ supplier.balance_due|currency }}</td>
+              <td>{{ supplier.created_at|date:"M j, Y" }}</td>
+              <td>
+                <div class="action-buttons">
+                  <a href="{% url 'supplier:detail' supplier.pk %}"
+                     class="btn-action btn-view"
+                     title="View Details">
+                    <i class="fas fa-eye"></i>
+                  </a>
+                  <a href="{% url 'supplier:report' supplier.pk %}"
+                     class="btn-action btn-info"
+                     title="View Report">
+                    <i class="fas fa-chart-line"></i>
+                  </a>
+                  <a href="{% url 'supplier:edit' supplier.pk %}"
+                     class="btn-action btn-edit"
+                     title="Edit Supplier">
+                    <i class="fas fa-edit"></i>
+                  </a>
+                  <a href="{% url 'supplier:delete' supplier.pk %}"
+                     class="btn-action btn-delete"
+                     title="Delete Supplier">
+                    <i class="fas fa-trash"></i>
+                  </a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <!-- Empty State -->
+      <div class="empty-state">
+        <i class="fas fa-users"></i>
+        <h3>No Suppliers Found</h3>
+        <p>
+          {% if search_query or status_filter %}
+            No suppliers match your current search criteria. Try adjusting your filters.
+          {% else %}
+            You haven't added any suppliers yet. Get started by adding your first supplier.
+          {% endif %}
+        </p>
+        <a href="{% url 'supplier:create' %}" class="btn btn-primary">
+          <i class="fas fa-plus"></i>
+          Add First Supplier
+        </a>
+      </div>
+    {% endif %}
+  </div>
+{% endblock content %}

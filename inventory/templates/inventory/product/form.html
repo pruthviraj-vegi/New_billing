@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}
+  {% if product %}
+    Edit Product - {{ product.display_name }}
+  {% else %}
+    Create Product
+  {% endif %}
+{% endblock title %}
+{% block content %}
+  <!-- Page Header -->
+  <div class="page-header">
+    <h2 class="page-title">
+      {% if product %}
+        Edit Product
+      {% else %}
+        Create New Product
+      {% endif %}
+    </h2>
+    <div class="page-actions">
+      {% if product %}
+        <a href="{% url 'inventory_products:details' product.id %}"
+           class="btn btn-secondary">
+          <i class="fas fa-arrow-left"></i>
+          Back to Product
+        </a>
+      {% endif %}
+      <a href="{% url 'inventory_products:home' %}" class="btn btn-secondary">
+        <i class="fas fa-list"></i>
+        Back to Products
+      </a>
+    </div>
+  </div>
+  <!-- Breadcrumb Navigation -->
+  <nav class="breadcrumb breadcrumb-right">
+    <a href="{% url 'inventory_products:home' %}" class="breadcrumb-item">Products</a>
+    <span class="breadcrumb-separator">/</span>
+    {% if product %}
+      <span class="breadcrumb-item">{{ product.name }}</span>
+      <span class="breadcrumb-separator">/</span>
+      <span class="breadcrumb-active">Edit</span>
+    {% else %}
+      <span class="breadcrumb-active">Create New</span>
+    {% endif %}
+  </nav>
+  <!-- Product Form -->
+  <div class="form-container">
+    <div class="form-card">
+      <form method="post" class="details-form" novalidate autocomplete="off">
+        {% csrf_token %}
+        <!-- Form Errors -->
+        {% if form.non_field_errors %}
+          <div class="form-errors">
+            {% for error in form.non_field_errors %}
+              <div class="error-message">
+                <i class="fas fa-exclamation-triangle"></i>
+                {{ error }}
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+        
+        <!-- Product Details Section -->
+        <div class="form-section">
+          <h5 class="form-section-title">Product Details</h5>
+          <!-- Row 1: Brand and Name -->
+          <div class="row">
+            <div class="col-md-6">
+              <!-- Brand Field -->
+              <div class="form-group {% if form.brand.errors %}has-error{% endif %}">
+                <label for="{{ form.brand.id_for_label }}" class="form-label">{{ form.brand.label }}</label>
+                {{ form.brand }}
+                <small class="form-help">e.g., Nike, Adidas, Levi's, Zara</small>
+                {% if form.brand.errors %}
+                  <div class="field-errors">
+                    {% for error in form.brand.errors %}
+                      <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i>
+                        {{ error }}
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+            <div class="col-md-6">
+              <!-- Name Field -->
+              <div class="form-group {% if form.name.errors %}has-error{% endif %}">
+                <label for="{{ form.name.id_for_label }}" class="form-label">{{ form.name.label }}</label>
+                {{ form.name }}
+                <small class="form-help">e.g., Cotton T-Shirt, Denim Jeans, Silk Dress</small>
+                {% if form.name.errors %}
+                  <div class="field-errors">
+                    {% for error in form.name.errors %}
+                      <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i>
+                        {{ error }}
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <!-- Row 2: Category and Cloth Type -->
+          <div class="row">
+            <div class="col-md-6">
+              <!-- Category Field -->
+              <div class="form-group {% if form.category.errors %}has-error{% endif %}">
+                <label for="{{ form.category.id_for_label }}" class="form-label">{{ form.category.label }}</label>
+                {{ form.category }}
+                <small class="form-help">Select the appropriate category for this product</small>
+                {% if form.category.errors %}
+                  <div class="field-errors">
+                    {% for error in form.category.errors %}
+                      <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i>
+                        {{ error }}
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+            <div class="col-md-6">
+              <!-- Cloth Type Field -->
+              <div class="form-group {% if form.cloth_type.errors %}has-error{% endif %}">
+                <label for="{{ form.cloth_type.id_for_label }}" class="form-label">{{ form.cloth_type.label }}</label>
+                {{ form.cloth_type }}
+                <small class="form-help">e.g., Cotton, Silk, Polyester, Denim</small>
+                {% if form.cloth_type.errors %}
+                  <div class="field-errors">
+                    {% for error in form.cloth_type.errors %}
+                      <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i>
+                        {{ error }}
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <!-- Row 3: HSN Code and GST Percentage -->
+          <div class="row">
+            <div class="col-md-6">
+              <!-- HSN Code Field -->
+              <div class="form-group {% if form.hsn_code.errors %}has-error{% endif %}">
+                <label for="{{ form.hsn_code.id_for_label }}" class="form-label">{{ form.hsn_code.label }}</label>
+                {{ form.hsn_code }}
+                <small class="form-help">e.g., 5208, 6104 (4-8 digits)</small>
+                {% if form.hsn_code.errors %}
+                  <div class="field-errors">
+                    {% for error in form.hsn_code.errors %}
+                      <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i>
+                        {{ error }}
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+            <div class="col-md-6">
+              <!-- GST Percentage Field -->
+              <div class="form-group {% if form.gst_percentage.errors %}has-error{% endif %}">
+                <label for="{{ form.gst_percentage.id_for_label }}" class="form-label">{{ form.gst_percentage.label }}</label>
+                {{ form.gst_percentage }}
+                <small class="form-help">e.g., 18.00, 28.00 (GST percentage)</small>
+                {% if form.gst_percentage.errors %}
+                  <div class="field-errors">
+                    {% for error in form.gst_percentage.errors %}
+                      <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i>
+                        {{ error }}
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          <!-- Row 4: Description (Full Width) -->
+          <div class="form-group {% if form.description.errors %}has-error{% endif %}">
+            <label for="{{ form.description.id_for_label }}" class="form-label">{{ form.description.label }}</label>
+            {{ form.description }}
+            <small class="form-help">e.g., High-quality cotton t-shirt with comfortable fit</small>
+            {% if form.description.errors %}
+              <div class="field-errors">
+                {% for error in form.description.errors %}
+                  <div class="error-message">
+                    <i class="fas fa-exclamation-circle"></i>
+                    {{ error }}
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+        
+        <!-- Form Actions -->
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save"></i>
+            {% if product %}
+              Update Product
+            {% else %}
+              Create Product
+            {% endif %}
+          </button>
+          <a href="{% url 'inventory_products:home' %}" class="btn btn-secondary">
+            <i class="fas fa-times"></i>
+            Cancel
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock content %}

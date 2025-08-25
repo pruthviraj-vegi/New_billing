@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load custom_filters %}
+{% load static %}
+{% block title %}
+    {% if cart %}
+        {{ cart.name }}
+    {% else %}
+        Cart Management
+    {% endif %}
+{% endblock title %}
+{% block content %}
+    {% csrf_token %}
+    <div class="page-header">
+        <h2 class="page-title">Carts</h2>
+        <div class="page-actions">
+            {% for data in carts %}
+                <a href="{% url 'cart:getCartData' data.id %}"
+                   class="btn {% if data.id == cart.id %}btn-primary{% else %}btn-secondary{% endif %}">
+                    {{ data.name }} - {{ data.total_amount|currency }}
+                </a>
+            {% endfor %}
+        </div>
+        <div class="page-actions">
+            <a href="{% url 'cart:create_cart' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i>
+                New Cart
+            </a>
+        </div>
+    </div>
+    <!-- Breadcrumb Navigation -->
+    <nav class="breadcrumb breadcrumb-right">
+        <a href="#" class="breadcrumb-item">Carts</a>
+        <span class="breadcrumb-separator">/</span>
+        <span class="breadcrumb-active">Cart Details</span>
+    </nav>
+    {% if cart %}
+        {% include "cart/models/cart.html" %}
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">
+                <i class="fas fa-shopping-cart"></i>
+            </div>
+            <h3>No Cart Selected</h3>
+            <p>Please select a cart from the buttons above or create a new one to start adding items.</p>
+        </div>
+    {% endif %}
+{% endblock content %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const createCartBtn = document.getElementById('createCartBtn');
+    
+    createCartBtn.addEventListener('click', function() {
+        const cartName = prompt('Enter cart name (optional):');
+        
+        fetch('{% url "cart:create_cart" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                name: cartName || ''
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert('Cart created successfully!');
+                // Redirect to the new cart
+                window.location.href = `{% url 'cart:getCartData' 0 %}`.replace('0', data.cart.id);
+            } else {
+                alert('Error creating cart: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error creating cart');
+        });
+    });
+});
+</script>

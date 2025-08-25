@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% load static %}
+{% load custom_filters %}
+{% block title %}
+    Invoices Management
+{% endblock title %}
+{% block content %}
+    <!-- Page Header -->
+    <div class="page-header">
+        <h2 class="page-title">Invoices Management</h2>
+        <div class="page-actions">
+            <a href="{% url 'invoice:download' %}" class="btn">
+                <i class="fas fa-download"></i>
+                Download
+            </a>
+            <a href="{% url 'cart:main_page' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i>
+                New Invoice
+            </a>
+        </div>
+    </div>
+    <!-- Breadcrumb Navigation -->
+    <nav class="breadcrumb breadcrumb-right">
+        <a href="#" class="breadcrumb-item">Invoices</a>
+        <span class="breadcrumb-separator">/</span>
+        <span class="breadcrumb-active">All Invoices</span>
+    </nav>
+    <!-- Search and Filter Section -->
+    <div class="search-filter-section">
+        <form method="get" class="search-filter-form" id="searchForm">
+            <div class="search-group search-expanded">
+                <i class="fas fa-search search-icon"></i>
+                <input type="search"
+                       name="search"
+                       class="search-input"
+                       placeholder="Search invoices..."
+                       value="{{ search_query }}"
+                       id="searchInput"
+                       autofocus>
+            </div>
+            <select name="status" class="filter-select" id="statusFilter">
+                <option value="">All Status</option>
+                {% for value, label in payment_status_choices %}
+                    <option value="{{ value }}"
+                            {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select name="invoice_type" class="filter-select" id="invoiceTypeFilter">
+                <option value="">All Types</option>
+                {% for value, label in invoice_type_choices %}
+                    <option value="{{ value }}"
+                            {% if invoice_type_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select name="sort" class="filter-select" id="sortSelect">
+                <option value="-created_at"
+                        {% if sort_by == '-created_at' %}selected{% endif %}>Newest First</option>
+                <option value="created_at"
+                        {% if sort_by == 'created_at' %}selected{% endif %}>Oldest First</option>
+                <option value="invoice_number"
+                        {% if sort_by == 'invoice_number' %}selected{% endif %}>Invoice # A-Z</option>
+                <option value="-invoice_number"
+                        {% if sort_by == '-invoice_number' %}selected{% endif %}>Invoice # Z-A</option>
+                <option value="amount" {% if sort_by == 'amount' %}selected{% endif %}>Amount Low-High</option>
+                <option value="-amount" {% if sort_by == '-amount' %}selected{% endif %}>Amount High-Low</option>
+            </select>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-search"></i>
+                Search
+            </button>
+        </form>
+    </div>
+    <!-- Data Table -->
+    <div class="table-container">
+        {% if page_obj %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Invoice #</th>
+                        <th>Customer</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                        <th>Due Date</th>
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for invoice in page_obj %}
+                        <tr>
+                            <td>
+                                <div>
+                                    <div class="font-weight-bold text-primary">{{ invoice.invoice_number|default:"N/A" }}</div>
+                                    {% if invoice.cart_no %}<div class="secondary-text">Cart: {{ invoice.cart_no }}</div>{% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div>
+                                    <div class="font-weight-bold text-primary">{{ invoice.customer.name|default:"N/A" }}</div>
+                                    {% if invoice.customer.phone_number %}<div class="secondary-text">{{ invoice.customer.phone_number }}</div>{% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                {% if invoice.invoice_type == 'CASH' %}
+                                    <span class="badge text-success">
+                                        <i class="fas fa-money-bill-wave"></i>
+                                        Cash
+                                    </span>
+                                {% else %}
+                                    <span class="badge text-warning">
+                                        <i class="fas fa-credit-card"></i>
+                                        Credit
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div>
+                                    <div class="font-weight-bold text-primary">{{ invoice.amount|currency }}</div>
+                                    <div class="secondary-text">
+                                        {% if invoice.discount_amount > 0 %}
+                                            Dsc: -{{ invoice.discount_amount|currency_nonDecimal }}
+                                        {% endif %}
+                                        {% if invoice.advance_amount > 0 %}
+                                            Adv: {{ invoice.advance_amount|currency_nonDecimal }} 
+                                        {% endif %}
+                                    </div>
+                                    
+                                </div>
+                            </td>
+                            <td>
+                                {% if invoice.payment_status == 'PAID' %}
+                                    <span class="badge text-success">
+                                        <i class="fas fa-check-circle"></i>
+                                        Paid
+                                    </span>
+                                {% elif invoice.payment_status == 'PARTIALLY_PAID' %}
+                                    <span class="badge text-warning">
+                                        <i class="fas fa-clock"></i>
+                                        Partial
+                                    </span>
+                                {% elif invoice.payment_status == 'VOID' %}
+                                    <span class="badge text-danger">
+                                        <i class="fas fa-ban"></i>
+                                        Void
+                                    </span>
+                                {% else %}
+                                    <span class="badge text-danger">
+                                        <i class="fas fa-times-circle"></i>
+                                        Unpaid
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td>{{ invoice.invoice_date|date:"M d, Y" }}</td>
+                            <td>
+                                {% if invoice.due_date %}
+                                    {% if invoice.is_overdue %}
+                                        <span class="text-danger font-weight-bold">{{ invoice.due_date|date:"M d, Y" }}</span>
+                                    {% else %}
+                                        {{ invoice.due_date|date:"M d, Y" }}
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    <a href="{% url 'invoice:detail' invoice.id %}"
+                                       class="btn-action btn-view"
+                                       title="View Details">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <a href="{% url 'invoice:edit' invoice.id %}"
+                                       class="btn-action btn-edit"
+                                       title="Edit Invoice">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <a href="{% url 'invoice:delete' invoice.id %}"
+                                       class="btn-action btn-delete"
+                                       title="Delete Invoice">
+                                        <i class="fas fa-trash"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <!-- Pagination -->
+            {% if page_obj.has_other_pages %}
+                <div class="pagination">
+                    {% if page_obj.has_previous %}
+                        <a href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if invoice_type_filter %}&invoice_type={{ invoice_type_filter }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}"
+                           class="page-link">
+                            <i class="fas fa-angle-double-left"></i>
+                        </a>
+                        <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if invoice_type_filter %}&invoice_type={{ invoice_type_filter }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}"
+                           class="page-link">
+                            <i class="fas fa-angle-left"></i>
+                        </a>
+                    {% endif %}
+                    <span class="page-info">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                    {% if page_obj.has_next %}
+                        <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if invoice_type_filter %}&invoice_type={{ invoice_type_filter }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}"
+                           class="page-link">
+                            <i class="fas fa-angle-right"></i>
+                        </a>
+                        <a href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if invoice_type_filter %}&invoice_type={{ invoice_type_filter }}{% endif %}{% if sort_by %}&sort={{ sort_by }}{% endif %}"
+                           class="page-link">
+                            <i class="fas fa-angle-double-right"></i>
+                        </a>
+                    {% endif %}
+                </div>
+            {% endif %}
+        {% else %}
+            <div class="empty-state">
+                <i class="fas fa-file-invoice"></i>
+                <h3>No Invoices Found</h3>
+                <p>No invoices match your search criteria. Try adjusting your filters or create a new invoice.</p>
+                <a href="{% url 'cart:main_page' %}"
+                   class="btn btn-primary"
+                   id="addFirstInvoiceBtn">
+                    <i class="fas fa-plus"></i>
+                    Create First Invoice
+                </a>
+            </div>
+        {% endif %}
+    </div>
+{% endblock content %}

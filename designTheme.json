@@ -1,0 +1,31 @@
+{
+    "theme": {
+        "mode": "auto",
+        "colors": {
+            "primary": "#2563eb",
+            "secondary": "#64748b",
+            "background_light": "#ffffff",
+            "background_dark": "#0f172a",
+            "text_light": "#1e293b",
+            "text_dark": "#f1f5f9"
+        },
+        "typography": {
+            "font": "Inter, sans-serif",
+            "size_base": "16px",
+            "heading_weight": "600"
+        },
+        "components": {
+            "topbar_height": "60px",
+            "navbar_height": "50px",
+            "logo_path": "/static/images/logo.png"
+        },
+        "layout": {
+            "breakpoints": {
+                "sm": "640px",
+                "md": "768px",
+                "lg": "1024px",
+                "xl": "1280px"
+            }
+        }
+    }
+}

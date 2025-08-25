@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+- I have theme based project so insted of giving  static colours 
+- use the "static/css/main.css" file, and if 
+- any new html page is created use those componets 
+- add the ned componets to that main file
+
+

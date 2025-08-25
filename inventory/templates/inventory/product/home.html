@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% load static %}
+{% load custom_filters %}
+{% block title %}
+    Products Management
+{% endblock title %}
+{% block content %}
+    <!-- Page Header -->
+    <div class="page-header">
+        <h2 class="page-title">Products Management</h2>
+        <div class="page-actions">
+            <a href="{% url 'inventory_products:create' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i>
+                New Product
+            </a>
+        </div>
+    </div>
+    <!-- Breadcrumb Navigation -->
+    <nav class="breadcrumb breadcrumb-right">
+        <a href="#" class="breadcrumb-item">Products</a>
+        <span class="breadcrumb-separator">/</span>
+        <span class="breadcrumb-active">All Products</span>
+    </nav>
+    <!-- Search and Filter Section -->
+    <div class="search-filter-section">
+        <form method="get" class="search-filter-form" id="searchForm">
+            <div class="search-group search-expanded">
+                <i class="fas fa-search search-icon"></i>
+                <input type="search"
+                       name="search"
+                       class="search-input"
+                       placeholder="Search products..."
+                       value="{{ search_query }}"
+                       id="searchInput"
+                       autofocus>
+            </div>
+            <select name="status" class="filter-select" id="statusFilter">
+                <option value="">All Status</option>
+                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+                <option value="inactive"
+                        {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+            </select>
+            <select name="sort" class="filter-select" id="sortSelect">
+                <option value="-created_at"
+                        {% if sort_by == '-created_at' %}selected{% endif %}>Newest First</option>
+                <option value="created_at"
+                        {% if sort_by == 'created_at' %}selected{% endif %}>Oldest First</option>
+                <option value="name" {% if sort_by == 'name' %}selected{% endif %}>Name A-Z</option>
+                <option value="-name" {% if sort_by == '-name' %}selected{% endif %}>Name Z-A</option>
+                <option value="phone_number"
+                        {% if sort_by == 'phone_number' %}selected{% endif %}>Phone A-Z</option>
+                <option value="-phone_number"
+                        {% if sort_by == '-phone_number' %}selected{% endif %}>Phone Z-A</option>
+            </select>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-search"></i>
+                Search
+            </button>
+        </form>
+    </div>
+    <!-- Data Table -->
+    <div class="table-container">
+        {% if data %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Brand</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Cloth Type</th>
+                        <th>HSN Code</th>
+                        <th>Variants</th>
+                        <th>GST %</th>
+                        <th>Status</th>
+                        <th>Created At</th>
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in data %}
+                        <tr>
+                            <td>{{ product.id }}</td>
+                            <td>{{ product.brand }}</td>
+                            <td>{{ product.name }}</td>
+                            <td>{{ product.category.name }}</td>
+                            <td>{{ product.cloth_type.name }}</td>
+                            <td>{{ product.hsn_code }}</td>
+                            <td>{{ product.product_variants.count }}</td>
+                            <td>{{ product.gst_percentage }}</td>
+                            <td>
+                                <span class="text-success">{{ product.status }}</span>
+                            </td>
+                            <td>
+                                <strong>{{ product.created_at|date:"M d, Y" }}</strong>
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    <a href="{% url 'inventory_products:details' product.id %}"
+                                       class="btn-action btn-view"
+                                       title="View Product Details">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <a href="{% url 'inventory_products:edit' product.id %}"
+                                       class="btn-action btn-edit"
+                                       title="Edit Product">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <a href="#" class="btn-action btn-delete" title="Delete Product">
+                                        <i class="fas fa-trash"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <div class="empty-state">
+                <i class="fas fa-boxes"></i>
+                <h3>No Products Found</h3>
+                <p>No products match your search criteria. Try adjusting your filters or add a new product.</p>
+                <a href="{% url 'inventory:product_create' %}"
+                   class="btn btn-primary"
+                   id="addFirstProductBtn">
+                    <i class="fas fa-plus"></i>
+                    Add First Product
+                </a>
+            </div>
+        {% endif %}
+    </div>
+{% endblock content %}
+{% block extra_js %}
+    <script>
+// Search and filter functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('searchInput');
+    const statusFilter = document.getElementById('statusFilter');
+    const sortSelect = document.getElementById('sortSelect');
+    const searchForm = document.getElementById('searchForm');
+    
+    // Auto-submit form on filter change
+    statusFilter.addEventListener('change', function() {
+        searchForm.submit();
+    });
+    
+    sortSelect.addEventListener('change', function() {
+        searchForm.submit();
+    });
+    
+    // Debounced search
+    let searchTimeout;
+    searchInput.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(function() {
+            searchForm.submit();
+        }, 500);
+    });
+});
+    </script>
+{% endblock extra_js %}

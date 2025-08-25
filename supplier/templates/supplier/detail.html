@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+{% load static %}
+{% load custom_filters %}
+{% block title %}
+  {{ supplier.name }} - Supplier Details
+{% endblock title %}
+{% block content %}
+  <!-- Page Header -->
+  <div class="page-header">
+    <h2 class="page-title">{{ supplier.name }}</h2>
+    <div class="page-actions">
+      <a href="{% url 'supplier:home' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i>
+        Back
+      </a>
+      <!-- <a href="{% url 'supplier:report' supplier.pk %}" class="btn btn-info">
+        <i class="fas fa-chart-line"></i>
+        View Report
+      </a> -->
+      <a href="{% url 'supplier:auto_reallocate' supplier.pk %}"
+         class="btn btn-warning"
+         id="autoReallocateBtn"
+         onclick="return confirmAutoReallocate()">
+        <i class="fas fa-sync-alt"></i>
+        Auto Reallocate
+      </a>
+      <a href="{% url 'supplier:edit' supplier.pk %}" class="btn btn-primary">
+        <i class="fas fa-edit"></i>
+        Edit Supplier
+      </a>
+      <a href="{% url 'supplier:delete' supplier.pk %}" class="btn btn-danger">
+        <i class="fas fa-trash"></i>
+        Delete Supplier
+      </a>
+    </div>
+  </div>
+  <!-- Breadcrumb Navigation -->
+  <nav class="breadcrumb breadcrumb-right">
+    <a href="{% url 'base:home' %}" class="breadcrumb-item">Dashboard</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="{% url 'supplier:home' %}" class="breadcrumb-item">Suppliers</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-active">{{ supplier.name }}</span>
+  </nav>
+  <!-- Main Layout -->
+  <div class="col d-flex flex-row gap-2">
+    <!-- Left Column - Supplier Details -->
+    <div class="col-md-2 d-flex flex-column gap-2">
+      <!-- Supplier Details Column -->
+      <div class="column details-column">
+        <div class="column-header">
+          <h3>
+            <i class="fas fa-user"></i> Supplier Details
+          </h3>
+        </div>
+        <div class="details-info-compact">
+          <div class="detail-name-compact">
+            <h4>{{ supplier.name }}</h4>
+            <span class="detail-status  {{ supplier.is_deleted|status_badge }}">{{ supplier.is_deleted|yesno:'Inactive,Active' }}</span>
+          </div>
+          <div class="detail-contact-compact">
+            <div class="contact-item">
+              <i class="fas fa-phone"></i>
+              <span>{{ supplier.phone }}</span>
+            </div>
+            {% if supplier.email %}
+              <div class="contact-item">
+                <i class="fas fa-envelope"></i>
+                <span>{{ supplier.email }}</span>
+              </div>
+            {% endif %}
+            {% if supplier.contact_person %}
+              <div class="contact-item">
+                <i class="fas fa-user"></i>
+                <span>{{ supplier.contact_person }}</span>
+              </div>
+            {% endif %}
+            {% if supplier.gstin %}
+              <div class="contact-item">
+                <i class="fas fa-id-card"></i>
+                <span>{{ supplier.gstin }}</span>
+              </div>
+            {% endif %}
+            {% if supplier.address %}
+              <div class="contact-item">
+                <i class="fas fa-map-marker-alt"></i>
+                <span>{{ supplier.address|truncatechars:50 }}</span>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <!-- Summary Cards -->
+      <div class="summary-card-compact" id="invoiceSummaryCard">
+        <div class="summary-icon-compact">
+          <i class="fas fa-file-invoice"></i>
+        </div>
+        <div class="summary-content-compact">
+          <h4>Invoice Summary</h4>
+          <div class="summary-stats-compact">
+            <div class="stat-item-compact">
+              <span class="stat-number-compact">{{ invoices.count }}</span>
+              <span class="stat-label-compact">Total</span>
+            </div>
+            <div class="stat-item-compact">
+              <span class="stat-number-compact">{{ total_invoice_amount|currency_nonDecimal }}</span>
+              <span class="stat-label-compact">Amount</span>
+            </div>
+            <div class="stat-item-compact">
+              <span class="stat-number-compact">{{ unpaid_invoices_count }}</span>
+              <span class="stat-label-compact">Unpaid</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="summary-card-compact" id="paymentSummaryCard">
+        <div class="summary-icon-compact">
+          <i class="fas fa-credit-card"></i>
+        </div>
+        <div class="summary-content-compact">
+          <h4>Payment Summary</h4>
+          <div class="summary-stats-compact">
+            <div class="stat-item-compact">
+              <span class="stat-number-compact">{{ payments.count }}</span>
+              <span class="stat-label-compact">Total</span>
+            </div>
+            <div class="stat-item-compact">
+              <span class="stat-number-compact">{{ total_payment_amount|currency_nonDecimal }}</span>
+              <span class="stat-label-compact">Amount</span>
+            </div>
+            <div class="stat-item-compact">
+              <span class="stat-number-compact">{{ outstanding_amount|currency_nonDecimal }}</span>
+              <span class="stat-label-compact">Outstanding</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Right Column - Tables -->
+    <div class="col-md-10">
+      <!-- Invoices Table -->
+      <div class="table-section" id="invoicesSection">
+        <div class="table-header">
+          <h3>
+            <i class="fas fa-file-invoice"></i> Invoices
+          </h3>
+          <a href="{% url 'supplier:create_invoice' supplier.pk %}"
+             class="btn btn-sm btn-primary">
+            <i class="fas fa-plus"></i>
+            Add Invoice
+          </a>
+        </div>
+        {% if invoices %}
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Invoice #</th>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Sub Total</th>
+                  <th>GST</th>
+                  <th>Total Amount</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for invoice in invoices %}
+                  <tr>
+                    <td>
+                      <div class="invoice-number">
+                        <strong>{{ invoice.invoice_number }}</strong>
+                        {% if invoice.notes %}<small class="text-muted">{{ invoice.notes|truncatechars:30 }}</small>{% endif %}
+                      </div>
+                    </td>
+                    <td>{{ invoice.invoice_date|date:'M j, Y' }}</td>
+                    <td>
+                      <span class="badge badge-secondary">{{ invoice.get_invoice_type_display }}</span>
+                      {% if invoice.gst_type %}
+                        <br />
+                        <small class="secondary-text">{{ invoice.get_gst_type_display }}</small>
+                      {% endif %}
+                    </td>
+                    <td>{{ invoice.sub_total|currency }}</td>
+                    <td>
+                      {% if invoice.invoice_type == 'GST_APPLICABLE' %}
+                        {% if invoice.gst_type == 'CGST_SGST' %}
+                          CGST: {{ invoice.cgst_amount|currency }}
+                          <br />
+                          SGST: {{ invoice.cgst_amount|currency }}
+                        {% else %}
+                          IGST: {{ invoice.igst_amount|currency }}
+                        {% endif %}
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <strong>{{ invoice.total_amount|currency }}</strong>
+                      {% if invoice.adjustment_amount != 0 %}
+                        <br />
+                        <small class="secondary-text">Adj: {{ invoice.adjustment_amount|currency }}</small>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <span class="{% if invoice.status == 'PAID' %}text-success{% elif invoice.status == 'PARTIALLY_PAID' %}text-warning{% else %}text-danger{% endif %}">
+                        {{ invoice.get_status_display }}
+                      </span>
+                      {% if invoice.paid_amount > 0 %}
+                        <br />
+                        <small class="secondary-text">Paid: {{ invoice.paid_amount|currency }}</small>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <div class="action-buttons">
+                        <a href="#" class="btn-action btn-view" title="View Invoice"><i class="fas fa-eye"></i></a>
+                        <a href="{% url 'supplier:edit_invoice' supplier.pk invoice.pk %}"
+                           class="btn-action btn-edit"
+                           title="Edit Invoice"><i class="fas fa-edit"></i></a>
+                        <a href="{% url 'supplier:delete_invoice' supplier.pk invoice.pk %}"
+                           class="btn-action btn-delete"
+                           title="Delete Invoice"><i class="fas fa-trash"></i></a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty-state">
+            <i class="fas fa-file-invoice"></i>
+            <h4>No Invoices Found</h4>
+            <p>No invoices have been created for this supplier yet.</p>
+            <a href="{% url 'supplier:create_invoice' supplier.pk %}"
+               class="btn btn-primary">
+              <i class="fas fa-plus"></i>
+              Create First Invoice
+            </a>
+          </div>
+        {% endif %}
+      </div>
+      <!-- Payments Table -->
+      <div class="table-section" id="paymentsSection">
+        <div class="table-header">
+          <h3>
+            <i class="fas fa-credit-card"></i> Payments
+          </h3>
+          <a href="{% url 'supplier:create_payment' supplier.pk %}"
+             class="btn btn-sm btn-primary">
+            <i class="fas fa-plus"></i>
+            Add Payment
+          </a>
+        </div>
+        {% if payments %}
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Payment #</th>
+                  <th>Date</th>
+                  <th>Amount</th>
+                  <th>Method</th>
+                  <th>Reference</th>
+                  <th>Allocated</th>
+                  <th>Unallocated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for payment in payments %}
+                  <tr>
+                    <td>
+                      <div class="payment-number">
+                        <strong>#{{ payment.id }}</strong>
+                      </div>
+                    </td>
+                    <td>{{ payment.payment_date|date:'M j, Y' }}</td>
+                    <td>
+                      <strong>{{ payment.amount|currency }}</strong>
+                    </td>
+                    <td>
+                      <span class="badge badge-info">{{ payment.get_method_display }}</span>
+                    </td>
+                    <td>
+                      {% if payment.transaction_id %}
+                        {{ payment.transaction_id }}
+                      {% else %}
+                        <span class="text-muted">-</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if payment.amount != payment.unallocated_amount %}
+                        <span class="text-success">{{ payment.amount|sub:payment.unallocated_amount|currency }}</span>
+                      {% else %}
+                        <span class="text-muted">₹0.00</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if payment.unallocated_amount > 0 %}
+                        <span class="text-warning">{{ payment.unallocated_amount|currency }}</span>
+                      {% else %}
+                        <span class="text-success">₹0.00</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <div class="action-buttons">
+                        <a href="{% url 'supplier:payment_detail' supplier.pk payment.pk %}"
+                           class="btn-action btn-view"
+                           title="View Payment"><i class="fas fa-eye"></i></a>
+                        <a href="{% url 'supplier:edit_payment' supplier.pk payment.pk %}"
+                           class="btn-action btn-edit"
+                           title="Edit Payment"><i class="fas fa-edit"></i></a>
+                        <a href="{% url 'supplier:delete_payment' supplier.pk payment.pk %}"
+                           class="btn-action btn-delete"
+                           title="Delete Payment"><i class="fas fa-trash"></i></a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty-state">
+            <i class="fas fa-credit-card"></i>
+            <h4>No Payments Found</h4>
+            <p>No payments have been recorded for this supplier yet.</p>
+            <a href="{% url 'supplier:create_payment' supplier.pk %}"
+               class="btn btn-primary">
+              <i class="fas fa-plus"></i>
+              Record First Payment
+            </a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+{% block extra_js %}
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      // Summary card click handlers
+      const invoiceSummaryCard = document.getElementById('invoiceSummaryCard')
+      const paymentSummaryCard = document.getElementById('paymentSummaryCard')
+      const invoicesSection = document.getElementById('invoicesSection')
+      const paymentsSection = document.getElementById('paymentsSection')
+    
+      invoiceSummaryCard.addEventListener('click', function () {
+        invoicesSection.scrollIntoView({ behavior: 'smooth' })
+      })
+    
+      paymentSummaryCard.addEventListener('click', function () {
+        paymentsSection.scrollIntoView({ behavior: 'smooth' })
+      })
+    })
+    
+    function confirmAutoReallocate() {
+      const confirmed = confirm('⚠️ WARNING: This action will:\n\n' + '• Delete ALL existing payment allocations\n' + '• Reapply payments using FIFO method (oldest invoices first)\n' + '• This action cannot be undone\n\n' + 'Are you sure you want to continue?')
+    
+      if (confirmed) {
+        const btn = document.getElementById('autoReallocateBtn')
+        const originalText = btn.innerHTML
+        const originalClass = btn.className
+    
+        // Show loading state
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reallocating...'
+        btn.className = 'btn btn-warning disabled'
+        btn.style.pointerEvents = 'none'
+    
+        // Re-enable after a short delay (in case of errors)
+        setTimeout(() => {
+          btn.innerHTML = originalText
+          btn.className = originalClass
+          btn.style.pointerEvents = 'auto'
+        }, 10000)
+    
+        return true
+      }
+    
+      return false
+    }
+  </script>
+{% endblock extra_js %}
