@@ -5,3 +5,8 @@ venv/*
 __pycache__/*
 _desizn/*
 *.sh
+gemini.py
+generate_inventory_data.py
+generate_invoice_data.py
+generate_customer_data.py
+.vscode/*

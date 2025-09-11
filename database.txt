@@ -1,0 +1,18 @@
+sudo -i -u postgres
+
+psql
+
+\c postgres;
+
+DROP DATABASE billing;
+
+
+CREATE DATABASE billing
+WITH OWNER = billing_user
+ENCODING = 'UTF8'
+LC_COLLATE = 'C.UTF-8'
+LC_CTYPE = 'C.UTF-8'
+TEMPLATE template0;
+
+
+\l

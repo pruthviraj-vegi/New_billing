@@ -543,7 +543,7 @@ class Invoice(models.Model):
         PAID = "PAID", "Paid"
         VOID = "VOID", "Void"
 
-    class TaxTreatment(models.TextChoices):
+    class Invoice_type(models.TextChoices):
         GST_APPLICABLE = "GST_APPLICABLE", "GST Applicable"
         GST_EXEMPT = "GST_EXEMPT", "GST Exempt"
         UNLEDGERED = "UNLEDGERED", "Unledgered"
@@ -564,7 +564,7 @@ class Invoice(models.Model):
         max_length=20, choices=InvoiceStatus.choices, default=InvoiceStatus.UNPAID
     )
     tax_treatment = models.CharField(
-        max_length=20, choices=TaxTreatment.choices, default=TaxTreatment.GST_APPLICABLE
+        max_length=20, choices=Invoice_type.choices, default=Invoice_type.GST_APPLICABLE
     )
     sub_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_tax = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -577,7 +577,7 @@ class Invoice(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return self.gst_invoice_number or self.invoice_number
+        return str(self.gst_invoice_number or self.invoice_number)
 
 
 class InvoiceItem(models.Model):
