@@ -99,7 +99,7 @@
         {% endif %}
         <!-- Variant Details Section -->
         <div class="row">
-          <div clas-="eil-md-12n">
+          <div class="col-md-12">
             <h5 class="section-title">Variant Details</h5>
             {% if is_first_variant %}
               <div class="alert alert-info">
@@ -109,9 +109,14 @@
             {% endif %}
             <!-- Row 1: Size and Color -->
             <div class="row">
-              <div class="col-md-6  {% if form.size.errors %}has-error{% endif %}">
+              <div class="col-md-6 {% if form.size.errors %}has-error{% endif %}">
                 <label for="{{ form.size.id_for_label }}" class="form-label">{{ form.size.label }}</label>
-                {{ form.size }}
+                <div class="input-group">
+                  {{ form.size }}
+                  <button type="button" class="btn btn-outline-primary" onclick="openModelPopup('{% url "inventory:size_create" %}', 'new_size', '{{ form.size.id_for_label }}')" title="Add New Size">
+                    <i class="fas fa-plus"></i>
+                  </button>
+                </div>
                 <small class="form-help">e.g., S, M, L, XL, XXL</small>
                 {% if form.size.errors %}
                   <div class="field-errors">
@@ -124,9 +129,14 @@
                   </div>
                 {% endif %}
               </div>
-              <div class="col-md-6  {% if form.color.errors %}has-error{% endif %}">
+              <div class="col-md-6 {% if form.color.errors %}has-error{% endif %}">
                 <label for="{{ form.color.id_for_label }}" class="form-label">{{ form.color.label }}</label>
-                {{ form.color }}
+                <div class="input-group">
+                  {{ form.color }}
+                  <button type="button" class="btn btn-outline-primary" onclick="openModelPopup('{% url "inventory:color_create" %}', 'new_color', '{{ form.color.id_for_label }}')" title="Add New Color">
+                    <i class="fas fa-plus"></i>
+                  </button>
+                </div>
                 <small class="form-help">e.g., Red, Blue, Black, White</small>
                 {% if form.color.errors %}
                   <div class="field-errors">
@@ -139,7 +149,10 @@
                   </div>
                 {% endif %}
               </div>
-              <!-- Row 2: Quantity, Minimum Quantity and Discount Percentage -->
+            </div>
+            
+            <!-- Row 2: Quantity and Minimum Quantity -->
+            <div class="row">
               <div class="col-md-6 {% if form.quantity.errors %}has-error{% endif %}">
                 <label for="{{ form.quantity.id_for_label }}" class="form-label">{{ form.quantity.label }}</label>
                 {{ form.quantity }}
@@ -170,24 +183,10 @@
                   </div>
                 {% endif %}
               </div>
-              <div class="col-md-6 {% if form.discount_percentage.errors %}has-error{% endif %}">
-                <label for="{{ form.discount_percentage.id_for_label }}" class="form-label">
-                  {{ form.discount_percentage.label }}
-                </label>
-                {{ form.discount_percentage }}
-                <small class="form-help">e.g., 10.00, 15.50 (discount percentage)</small>
-                {% if form.discount_percentage.errors %}
-                  <div class="field-errors">
-                    {% for error in form.discount_percentage.errors %}
-                      <div class="error-message">
-                        <i class="fas fa-exclamation-circle"></i>
-                        {{ error }}
-                      </div>
-                    {% endfor %}
-                  </div>
-                {% endif %}
-              </div>
-              <!-- Row 3: Purchase Price and Selling Price -->
+            </div>
+            
+            <!-- Row 3: Purchase Price and Selling Price -->
+            <div class="row">
               <div class="col-md-6 {% if form.purchase_price.errors %}has-error{% endif %}">
                 <label for="{{ form.purchase_price.id_for_label }}" class="form-label">{{ form.purchase_price.label }}</label>
                 {{ form.purchase_price }}
@@ -219,76 +218,101 @@
                 {% endif %}
               </div>
             </div>
-            <!-- Row 4: Extra Attributes (Full Width) -->
-            <div class="col-md-12 {% if form.extra_attributes.errors %}has-error{% endif %}">
-              <label for="{{ form.extra_attributes.id_for_label }}" class="form-label">{{ form.extra_attributes.label }}</label>
-              {{ form.extra_attributes }}
-              <small class="form-help">e.g., {"material": "cotton", "style": "casual"} (optional)</small>
-              {% if form.extra_attributes.errors %}
-                <div class="field-errors">
-                  {% for error in form.extra_attributes.errors %}
-                    <div class="error-message">
-                      <i class="fas fa-exclamation-circle"></i>
-                      {{ error }}
-                    </div>
-                  {% endfor %}
-                </div>
-              {% endif %}
-            </div>
-          </div>
-          <!-- Calculations Section -->
-          <div class="row">
-            <div class="col-md-12">
-              <h5 class="section-title">Calculations</h5>
-              <div class="total-amount-display">
-                <div class="total-row">
-                  <span class="total-label">GST Amount:</span>
-                  <span class="total-value" id="gst-amount-display">₹0.00</span>
-                </div>
-                <div class="total-row">
-                  <span class="total-label">Purchase Price (with GST):</span>
-                  <span class="total-value" id="purchase-with-gst-display">₹0.00</span>
-                </div>
-                <div class="total-row">
-                  <span class="total-label">Profit Margin (%):</span>
-                  <span class="total-value" id="profit-margin-percentage">0.00%</span>
-                </div>
-                <div class="total-row">
-                  <span class="total-label">Total Value:</span>
-                  <span class="total-value" id="total-value">₹0.00</span>
-                </div>
-                <div class="total-row">
-                  <span class="total-label">After Discount:</span>
-                  <span class="total-value" id="after-discount">₹0.00</span>
-                </div>
-                <div class="total-row total-final">
-                  <span class="total-label">Final Price:</span>
-                  <span class="total-value" id="final-price">₹0.00</span>
-                </div>
+            
+            <!-- Row 4: Discount Percentage -->
+            <div class="row">
+              <div class="col-md-6 {% if form.discount_percentage.errors %}has-error{% endif %}">
+                <label for="{{ form.discount_percentage.id_for_label }}" class="form-label">
+                  {{ form.discount_percentage.label }}
+                </label>
+                {{ form.discount_percentage }}
+                <small class="form-help">e.g., 10.00, 15.50 (discount percentage)</small>
+                {% if form.discount_percentage.errors %}
+                  <div class="field-errors">
+                    {% for error in form.discount_percentage.errors %}
+                      <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i>
+                        {{ error }}
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
               </div>
             </div>
-            <!-- Form Actions -->
-            <div class="form-actions">
-              <button type="submit" class="btn btn-primary">
-                <i class="fas fa-save"></i>
-                {% if variant %}
-                  Update Variant
-                {% else %}
-                  Create Variant
+            <!-- Row 5: Extra Attributes (Full Width) -->
+            <div class="row">
+              <div class="col-md-12 {% if form.extra_attributes.errors %}has-error{% endif %}">
+                <label for="{{ form.extra_attributes.id_for_label }}" class="form-label">{{ form.extra_attributes.label }}</label>
+                {{ form.extra_attributes }}
+                <small class="form-help">e.g., {"material": "cotton", "style": "casual"} (optional)</small>
+                {% if form.extra_attributes.errors %}
+                  <div class="field-errors">
+                    {% for error in form.extra_attributes.errors %}
+                      <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i>
+                        {{ error }}
+                      </div>
+                    {% endfor %}
+                  </div>
                 {% endif %}
-              </button>
-              <a href="{% url 'inventory_products:home' %}" class="btn btn-secondary">
-                <i class="fas fa-times"></i>
-                Cancel
-              </a>
+              </div>
             </div>
           </div>
         </div>
+        
+        <!-- Calculations Section -->
+        <div class="row">
+          <div class="col-md-12">
+            <h5 class="section-title">Calculations</h5>
+            <div class="total-amount-display">
+              <div class="total-row">
+                <span class="total-label">GST Amount:</span>
+                <span class="total-value" id="gst-amount-display">₹0.00</span>
+              </div>
+              <div class="total-row">
+                <span class="total-label">Purchase Price (with GST):</span>
+                <span class="total-value" id="purchase-with-gst-display">₹0.00</span>
+              </div>
+              <div class="total-row">
+                <span class="total-label">Profit Margin (%):</span>
+                <span class="total-value" id="profit-margin-percentage">0.00%</span>
+              </div>
+              <div class="total-row">
+                <span class="total-label">Total Value:</span>
+                <span class="total-value" id="total-value">₹0.00</span>
+              </div>
+              <div class="total-row">
+                <span class="total-label">After Discount:</span>
+                <span class="total-value" id="after-discount">₹0.00</span>
+              </div>
+              <div class="total-row total-final">
+                <span class="total-label">Final Price:</span>
+                <span class="total-value" id="final-price">₹0.00</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Form Actions -->
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save"></i>
+            {% if variant %}
+              Update Variant
+            {% else %}
+              Create Variant
+            {% endif %}
+          </button>
+          <a href="{% url 'inventory_products:home' %}" class="btn btn-secondary">
+            <i class="fas fa-times"></i>
+            Cancel
+          </a>
       </form>
     </div>
   </div>
+
 {% endblock content %}
-{% block extra_js %}
+ {% block extra_js %}
   <script>
   // Real-time calculations
   document.addEventListener('DOMContentLoaded', function () {
@@ -342,5 +366,6 @@
     // Initial calculation
     updateCalculations()
   })
+
   </script>
 {% endblock extra_js %}

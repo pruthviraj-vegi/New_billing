@@ -2,31 +2,55 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import JsonResponse, HttpResponse
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.contrib import messages
 from .models import Customer
 from invoice.models import Invoice
+from django.db.models import Sum, Count, Case, When, DecimalField
 import json
 from django.views.generic.edit import CreateView, UpdateView, DeleteView
 from .forms import CustomerForm
 from django.urls import reverse_lazy
+from django.core.paginator import Paginator
+from django.template.loader import render_to_string
+
+VALID_SORT_FIELDS = {
+    "id",
+    "-id",
+    "name",
+    "-name",
+    "email",
+    "-email",
+    "created_at",
+    "-created_at",
+    "phone_number",
+    "-phone_number",
+    "address",
+    "-address",
+}
+
+CUSTOMERS_PER_PAGE = 20
 
 
 @login_required
 def home(request):
-    """Member management main page with search and filter functionality."""
+    """Customer management main page - initial load only."""
+    # For initial page load, just render the template with empty data
+    return render(request, "customer/home.html")
 
+
+@login_required
+def fetch_customers(request):
+    """AJAX endpoint to fetch customers with search, filter, and pagination."""
     # Get search and filter parameters
     search_query = request.GET.get("search", "")
     status_filter = request.GET.get("status", "")
     sort_by = request.GET.get("sort", "-created_at")
 
-    # Start with all customers
-    customers = Customer.objects.all()
-
     # Apply search filter
+    filters = Q()
     if search_query:
-        customers = customers.filter(
+        filters &= (
             Q(name__icontains=search_query)
             | Q(phone_number__icontains=search_query)
             | Q(email__icontains=search_query)
@@ -35,31 +59,42 @@ def home(request):
 
     # Apply status filter (active/inactive based on soft delete)
     if status_filter == "active":
-        customers = customers.filter(is_deleted=False)
+        filters &= Q(is_deleted=False)
     elif status_filter == "inactive":
-        customers = customers.filter(is_deleted=True)
+        filters &= Q(is_deleted=True)
+
+    customers = Customer.objects.filter(filters)
 
     # Apply sorting
-    if sort_by in [
-        "name",
-        "-name",
-        "created_at",
-        "-created_at",
-        "phone_number",
-        "-phone_number",
-    ]:
-        customers = customers.order_by(sort_by)
-    else:
-        customers = customers.order_by("-created_at")
+    if sort_by not in VALID_SORT_FIELDS:
+        sort_by = "-created_at"
+    customers = customers.order_by(sort_by)
 
+    # Pagination
+    paginator = Paginator(customers, CUSTOMERS_PER_PAGE)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    # Render the HTML template
     context = {
-        "data": customers,
+        "page_obj": page_obj,
+        "total_count": paginator.count,
         "search_query": search_query,
-        "status_filter": status_filter,
-        "sort_by": sort_by,
     }
 
-    return render(request, "customer/home.html", context)
+    # Render the table content (without pagination)
+    table_html = render_to_string("customer/fetch.html", context, request=request)
+
+    # Render pagination separately
+    pagination_html = ""
+    if page_obj and page_obj.paginator.num_pages > 1:
+        pagination_html = render_to_string(
+            "common/_pagination.html", context, request=request
+        )
+
+    return JsonResponse(
+        {"html": table_html, "pagination": pagination_html, "success": True}
+    )
 
 
 class CreateCustomer(LoginRequiredMixin, CreateView):
@@ -98,6 +133,10 @@ class EditCustomer(LoginRequiredMixin, UpdateView):
         messages.success(self.request, "Customer updated successfully!")
         return super().form_valid(form)
 
+    def form_invalid(self, form):
+        messages.error(self.request, "Please correct the errors below.")
+        return super().form_invalid(form)
+
 
 class DeleteCustomer(LoginRequiredMixin, DeleteView):
     model = Customer
@@ -130,7 +169,45 @@ def customer_detail(request, pk):
     """View customer details."""
     customer = get_object_or_404(Customer, id=pk)
     invoices = Invoice.objects.filter(customer=customer)
-    return render(request, "customer/detail.html", {"customer": customer, "invoices": invoices})
+
+    # Get customer payments (FIFO system)
+    context = {
+        "customer": customer,
+        "invoices": invoices,
+    }
+    context.update(get_calculations(pk))
+    return render(request, "customer/detail.html", context)
+
+
+def get_calculations(pk):
+    customer = get_object_or_404(Customer, id=pk)
+    invoices = Invoice.objects.filter(customer=customer)
+
+    aggregates = invoices.aggregate(
+        total_invoices=Count("id"),
+        invoices_amount=Sum("amount"),
+        cash_amount=Sum(
+            Case(
+                When(payment_type="CASH", then="amount"),
+                default=0,
+                output_field=DecimalField(),
+            )
+        ),
+        credit_amount=Sum(
+            Case(
+                When(payment_type="CREDIT", then="amount"),
+                default=0,
+                output_field=DecimalField(),
+            )
+        ),
+    )
+
+    return {
+        "total_invoices": aggregates["total_invoices"] or 0,
+        "invoices_amount": aggregates["invoices_amount"] or 0,
+        "cash_amount": aggregates["cash_amount"] or 0,
+        "credit_amount": aggregates["credit_amount"] or 0,
+    }
 
 
 @login_required
@@ -171,32 +248,33 @@ def download_customers(request):
 
 
 @login_required
-def search_customers_ajax(request):
-    """AJAX endpoint for real-time customer search."""
-    search_query = request.GET.get("q", "")
-
-    if len(search_query) < 2:
-        return JsonResponse({"customers": []})
-
+def customer_search_api(request):
+    """API endpoint for searching customers (for autocomplete)."""
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    query = request.GET.get('q', '').strip()
+    
+    if len(query) < 2:
+        return JsonResponse({'customers': []})
+    
+    # Search customers by name or phone number
     customers = Customer.objects.filter(
-        Q(name__icontains=search_query)
-        | Q(phone_number__icontains=search_query)
-        | Q(email__icontains=search_query)
-    )[
-        :10
-    ]  # Limit to 10 results
-
-    data = []
+        Q(name__icontains=query) | Q(phone_number__icontains=query),
+        is_deleted=False
+    ).exclude(
+        # Exclude current customer if editing
+        id=request.GET.get('exclude', -1)
+    ).order_by('name')[:10]  # Limit to 10 results
+    
+    # Format response
+    customers_data = []
     for customer in customers:
-        data.append(
-            {
-                "id": customer.id,
-                "name": customer.name,
-                "phone_number": customer.phone_number,
-                "email": customer.email,
-                "address": customer.short_address,
-                "is_active": not customer.is_deleted,
-            }
-        )
-
-    return JsonResponse({"customers": data})
+        customers_data.append({
+            'id': customer.id,
+            'name': customer.name or '',
+            'phone_number': customer.phone_number or '',
+            'email': customer.email or '',
+        })
+    
+    return JsonResponse({'customers': customers_data})

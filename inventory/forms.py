@@ -21,10 +21,17 @@ class ProductForm(forms.ModelForm):
 
         widgets = {
             "name": forms.TextInput(
-                attrs={"class": "form-input", "placeholder": "Enter product name", }
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Enter product name",
+                }
             ),
             "brand": forms.TextInput(
-                attrs={"class": "form-input", "placeholder": "Enter brand name", "autofocus": True}
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Enter brand name",
+                    "autofocus": True,
+                }
             ),
             "description": forms.Textarea(
                 attrs={
@@ -38,25 +45,16 @@ class ProductForm(forms.ModelForm):
             "cloth_type": forms.Select(
                 attrs={"class": "form-input", "placeholder": "Select cloth type"}
             ),
-            "hsn_code": forms.TextInput(
+            "hsn_code": forms.Select(
                 attrs={
                     "class": "form-input",
-                    "placeholder": "Enter HSN code (4-8 digits)",
+                    "placeholder": "Select Hsn Code",
                 }
             ),
             "gst_percentage": forms.NumberInput(
                 attrs={"class": "form-input", "placeholder": "Enter GST percentage"}
             ),
         }
-
-        def clean_hsn_code(self):
-            hsn_code = self.cleaned_data.get("hsn_code")
-            if hsn_code:
-                # Remove any spaces or special characters
-                hsn_code = "".join(filter(str.isdigit, hsn_code))
-                if len(hsn_code) < 4 or len(hsn_code) > 8:
-                    raise forms.ValidationError("HSN code must be 4-8 digits")
-            return hsn_code
 
 
 class VariantForm(forms.ModelForm):
@@ -315,6 +313,7 @@ class InventoryAdjustmentForm(forms.ModelForm):
     class Meta:
         model = InventoryLog
         fields = [
+            "supplier_invoice",
             "quantity_change",
             "notes",
         ]
@@ -322,12 +321,20 @@ class InventoryAdjustmentForm(forms.ModelForm):
             "quantity_change": forms.NumberInput(
                 attrs={"class": "form-input", "step": "0.01", "autofocus": True}
             ),
+            "supplier_invoice": forms.Select(attrs={"class": "form-input"}),
             "notes": forms.Textarea(attrs={"class": "form-input", "rows": 3}),
         }
 
     def __init__(self, *args, **kwargs):
         self.adjustment_type = kwargs.pop("adjustment_type", "adjustment_in")
         super().__init__(*args, **kwargs)
+
+        # Filter only active supplier invoices
+        self.fields["supplier_invoice"].queryset = SupplierInvoice.objects.filter(
+            is_deleted=False
+        )
+        # Make supplier_invoice optional
+        self.fields["supplier_invoice"].required = False
 
         # Set labels based on adjustment type
         labels = {

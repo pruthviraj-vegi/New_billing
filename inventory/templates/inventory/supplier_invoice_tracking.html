@@ -18,7 +18,7 @@
 
 <!-- Breadcrumb Navigation -->
 <nav class="breadcrumb breadcrumb-right">
-    <a href="{% url 'inventory:product_home' %}" class="breadcrumb-item">Inventory</a>
+    <a href="{% url 'inventory_products:home' %}" class="breadcrumb-item">Inventory</a>
     <span class="breadcrumb-separator">/</span>
     <span class="breadcrumb-active">Supplier Invoices</span>
 </nav>
@@ -77,6 +77,7 @@
                     <th>Stock In</th>
                     <th>Sales</th>
                     <th>Remaining</th>
+                    <th>Sold Percentage</th>
                     <th>Products</th>
                     <th class="text-right">Actions</th>
                 </tr>
@@ -89,19 +90,16 @@
                     </td>
                     <td>{{ invoice.supplier_name }}</td>
                     <td>{{ invoice.invoice_date|date:"M d, Y" }}</td>
-                    <td>₹{{ invoice.total_amount|floatformat:2 }}</td>
+                    <td>{{ invoice.total_amount|currency }}</td>
+                    <td>{{ invoice.stock_in_quantity|floatformat:0 }}</td>
+                    <td>{{ invoice.sales_quantity|floatformat:0 }}</td>
+                    <td>{{ invoice.remaining_quantity|floatformat:0 }}</span></td>
                     <td>
-                        <span class="badge bg-success">{{ invoice.stock_in_quantity }}</span>
-                    </td>
-                    <td>
-                        <span class="badge bg-info">{{ invoice.sales_quantity }}</span>
-                    </td>
-                    <td>
-                        {% if invoice.remaining_quantity > 0 %}
-                            <span class="badge bg-warning">{{ invoice.remaining_quantity }}</span>
-                        {% else %}
-                            <span class="badge bg-danger">0</span>
-                        {% endif %}
+                        <span class="badge 
+                        {% if invoice.remaining_percentage < 25 %} text-danger 
+                         {% elif invoice.remaining_percentage < 50 %} text-mute 
+                          {% else %} text-success {% endif %}">
+                           {{ invoice.remaining_percentage }}%</span>
                     </td>
                     <td>
                         <span class="badge bg-secondary">{{ invoice.products_count }}</span>

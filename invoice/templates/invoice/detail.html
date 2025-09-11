@@ -7,7 +7,7 @@
 {% block content %}
     <!-- Page Header -->
     <div class="page-header">
-        <h2 class="page-title">{{ title }}</h2>
+        <h2 class="heading page-title">{{ title }}</h2>
         <div class="page-actions">
             <a href="{% url 'invoice:home' %}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i>
@@ -16,6 +16,10 @@
             <a href="{% url 'invoice:edit' invoice.id %}" class="btn btn-primary">
                 <i class="fas fa-edit"></i>
                 Edit Invoice
+            </a>
+            <a href="{% url 'report:invoice_pdf' invoice.id %}" class="btn btn-primary">
+                <i class="fas fa-print"></i>
+                Print Invoice
             </a>
             <a href="{% url 'invoice:delete' invoice.id %}" class="btn btn-danger">
                 <i class="fas fa-trash"></i>
@@ -45,33 +49,31 @@
                 <div class="details-info-compact">
                     <div class="detail-name-compact">
                         <h4>{{ invoice.invoice_number }}</h4>
-                        <span class="detail-status {% if invoice.payment_status == 'PAID' %}status-active {% elif invoice.payment_status == 'PARTIALLY_PAID' %}status-warning {% elif invoice.payment_status == 'VOID' %}status-danger {% else %}status-inactive{% endif %}">
-                            {{ invoice.get_payment_status_display }}
-                        </span>
+                        <span class="detail-status status-badge status-{{ invoice.payment_status|lower }}">{{ invoice.get_payment_status_display }}</span>
                     </div>
                     <div class="detail-contact-compact">
                         <div class="contact-item">
                             <i class="fas fa-user"></i>
-                            <span>{{ invoice.customer.name }}</span>
+                            <span><strong>Customer:</strong> {{ invoice.customer.name }}</span>
                         </div>
                         <div class="contact-item">
                             <i class="fas fa-phone"></i>
-                            <span>{{ invoice.customer.phone_number|phone_number }}</span>
+                            <span><strong>Phone:</strong> {{ invoice.customer.phone_number|phone_number }}</span>
                         </div>
                         {% if invoice.customer.email %}
                             <div class="contact-item">
                                 <i class="fas fa-envelope"></i>
-                                <span>{{ invoice.customer.email }}</span>
+                                <span><strong>Email:</strong> {{ invoice.customer.email }}</span>
                             </div>
                         {% endif %}
                         <div class="contact-item">
                             <i class="fas fa-calendar"></i>
-                            <span>{{ invoice.invoice_date|date:"M d, Y" }}</span>
+                            <span><strong>Date:</strong> {{ invoice.invoice_date|date:"M d, Y" }}</span>
                         </div>
                         {% if invoice.due_date %}
                             <div class="contact-item">
                                 <i class="fas fa-clock"></i>
-                                <span>
+                                <span><strong>Due Date:</strong> 
                                     {% if invoice.is_overdue %}
                                         <span class="text-danger">{{ invoice.due_date|date:"M d, Y" }} (Overdue)</span>
                                     {% else %}
@@ -82,12 +84,12 @@
                         {% endif %}
                         <div class="contact-item">
                             <i class="fas fa-money-bill-wave"></i>
-                            <span>{{ invoice.get_invoice_type_display }}</span>
+                            <span><strong>Type:</strong> {{ invoice.get_payment_type_display }}</span>
                         </div>
                         {% if invoice.notes %}
                             <div class="contact-item">
                                 <i class="fas fa-sticky-note"></i>
-                                <span>{{ invoice.notes|truncatechars:50 }}</span>
+                                <span><strong>Notes:</strong> {{ invoice.notes|truncatechars:50 }}</span>
                             </div>
                         {% endif %}
                     </div>
@@ -124,15 +126,15 @@
                     <h4>Payment Summary</h4>
                     <div class="summary-stats-compact">
                         <div class="stat-item-compact">
-                            <span class="stat-number-compact">{{ invoice.advance_amount|currency }}</span>
+                            <span class="stat-number-compact">{{ invoice.advance_amount|currency_nonDecimal }}</span>
                             <span class="stat-label-compact">Advance</span>
                         </div>
                         <div class="stat-item-compact">
-                            <span class="stat-number-compact">{{ invoice.paid_amount|currency }}</span>
+                            <span class="stat-number-compact">{{ invoice.paid_amount|currency_nonDecimal }}</span>
                             <span class="stat-label-compact">Paid</span>
                         </div>
                         <div class="stat-item-compact">
-                            <span class="stat-number-compact">{{ invoice.remaining_amount|currency }}</span>
+                            <span class="stat-number-compact">{{ invoice.remaining_amount|currency_nonDecimal }}</span>
                             <span class="stat-label-compact">Balance</span>
                         </div>
                     </div>
@@ -145,9 +147,8 @@
             <div class="table-section" id="itemsSection">
                 <div class="table-header">
                     <h3>
-                        <i class="fas fa-boxes"></i> Invoice Items
+                        <i class="fas fa-boxes"></i> Invoice Items ({{ invoice.invoice_items.count }})
                     </h3>
-                    <span class="item-count">{{ invoice.invoice_items.count }} items</span>
                 </div>
                 {% if invoice.invoice_items.exists %}
                     <div class="table-container">
@@ -167,21 +168,22 @@
                                     <tr>
                                         <td>
                                             <div class="product-info">
-                                                <strong>{{ item.product_variant.product.brand }}</strong>
+                                                <strong><a style="text-decoration: none; color: inherit;" href="{% url 'inventory_products:details' item.product_variant.product.id %}" target="_blank">
+                                                    {{ item.product_variant.product.brand }}</a></strong>
                                                 <br>
-                                                <small class="secondary-text">{{ item.product_variant.product.category.name }}</small>
+                                                <small class="text-muted">{{ item.product_variant.product.category.name }}</small>
                                             </div>
                                         </td>
                                         <td>
                                             <div class="variant-info">
-                                                <strong>{{ item.product_variant.simple_name }}</strong>
-                                                {% if item.product_variant.size %}
+                                                <strong><a style="text-decoration: none; color: inherit;" href="{% url 'inventory_variant:details' item.product_variant.id %}" target="_blank">
+                                                    {{ item.product_variant.simple_name }}</a></strong>
                                                     <br>
-                                                    <small class="secondary-text">Size: {{ item.product_variant.size.name }}</small>
+                                                {% if item.product_variant.size %}
+                                                    <small class="text-muted">Size: {{ item.product_variant.size.name }}</small>
                                                 {% endif %}
                                                 {% if item.product_variant.color %}
-                                                    <br>
-                                                    <small class="secondary-text">Color: {{ item.product_variant.color.name }}</small>
+                                                    <small class="text-muted">Color: {{ item.product_variant.color.name }}</small>
                                                 {% endif %}
                                             </div>
                                         </td>
@@ -192,7 +194,7 @@
                                             <strong>{{ item.net_amount|currency }}</strong>
                                             {% if item.discount_amount_per_unit > 0 %}
                                                 <br>
-                                                <small class="secondary-text">-{{ item.total_discount_amount|currency }}</small>
+                                                <small class="text-muted">-{{ item.total_discount_amount|currency }}</small>
                                             {% endif %}
                                         </td>
                                     </tr>
@@ -210,84 +212,85 @@
             </div>
             <!-- Payment History Table -->
             {% if invoice.paid_amount > 0 or invoice.advance_amount > 0 %}
-                <div class="table-section" id="paymentsSection">
-                    <div class="table-header">
-                        <h3>
-                            <i class="fas fa-credit-card"></i> Payment History
-                        </h3>
-                    </div>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Type</th>
-                                    <th>Amount</th>
-                                    <th>Date</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% if invoice.advance_amount > 0 %}
-                                    <tr>
-                                        <td>
-                                            <span class="badge badge-info">Advance</span>
-                                        </td>
-                                        <td>{{ invoice.advance_amount|currency }}</td>
-                                        <td>{{ invoice.invoice_date|date:"M j, Y" }}</td>
-                                        <td>
-                                            <span class="status-badge status-success">Received</span>
-                                        </td>
-                                    </tr>
-                                {% endif %}
-                                {% if invoice.paid_amount > 0 %}
-                                    <tr>
-                                        <td>
-                                            <span class="badge badge-success">Payment</span>
-                                        </td>
-                                        <td>{{ invoice.paid_amount|currency }}</td>
-                                        <td>{{ invoice.updated_at|date:"M j, Y" }}</td>
-                                        <td>
-                                            <span class="status-badge status-success">Received</span>
-                                        </td>
-                                    </tr>
-                                {% endif %}
-                            </tbody>
-                        </table>
-                    </div>
-                    <!-- Calculations Section -->
+            <div class="table-section" id="paymentsSection">
+                <div class="table-header">
+                    <h3>
+                        <i class="fas fa-credit-card"></i> Payment History
+                    </h3>
                 </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Amount</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if invoice.advance_amount > 0 %}
+                                <tr>
+                                    <td>
+                                        <span class="badge badge-info">Advance</span>
+                                    </td>
+                                    <td>{{ invoice.advance_amount|currency }}</td>
+                                    <td>{{ invoice.invoice_date|date:"M j, Y" }}</td>
+                                    <td>
+                                        <span class="status-badge status-success">Received</span>
+                                    </td>
+                                </tr>
+                            {% endif %}
+                            {% if invoice.paid_amount > 0 %}
+                                <tr>
+                                    <td>
+                                        <span class="badge badge-secondary">Payment</span>
+                                    </td>
+                                    <td>{{ invoice.paid_amount|currency }}</td>
+                                    <td>{{ invoice.updated_at|date:"M j, Y" }}</td>
+                                    <td>
+                                        <span class="status-badge status-success">Received</span>
+                                    </td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
             {% endif %}
             <!-- Calculations Section -->
-            <div class="form-section ">
+            <div class="table-section">
                 <div class="table-header">
                     <h3>
                         <i class="fas fa-calculator"></i> Calculations
                     </h3>
                 </div>
-                <div class="total-amount-display">
-                    <div class="total-row">
-                        <span class="total-label">Sub Total:</span>
-                        <span class="total-value">{{ invoice.amount|currency }}</span>
-                    </div>
-                    {% if invoice.discount_amount > 0 %}
+                <div class="table-container">
+                    <div class="total-amount-display">
                         <div class="total-row">
-                            <span class="total-label">Discount:</span>
-                            <span class="total-value text-danger">- {{ invoice.discount_amount|currency }}</span>
+                            <span class="total-label">Sub Total:</span>
+                            <span class="total-value">{{ invoice.amount|currency }}</span>
                         </div>
-                    {% endif %}
-                    <div class="total-row">
-                        <span class="total-label">Total:</span>
-                        <span class="total-value">{{ invoice.total_payable|currency }}</span>
-                    </div>
-                    {% if invoice.advance_amount > 0 %}
+                        {% if invoice.discount_amount > 0 %}
+                            <div class="total-row">
+                                <span class="total-label">Discount:</span>
+                                <span class="total-value text-danger">- {{ invoice.discount_amount|currency }}</span>
+                            </div>
+                        {% endif %}
                         <div class="total-row">
-                            <span class="total-label">Advance:</span>
-                            <span class="total-value text-success">{{ invoice.advance_amount|currency }}</span>
+                            <span class="total-label">Total:</span>
+                            <span class="total-value">{{ invoice.total_payable|currency }}</span>
                         </div>
-                    {% endif %}
-                    <div class="total-row total-final">
-                        <span class="total-label">Balance:</span>
-                        <span class="total-value">{{ invoice.net_amount_due|currency }}</span>
+                        {% if invoice.advance_amount > 0 %}
+                            <div class="total-row">
+                                <span class="total-label">Advance:</span>
+                                <span class="total-value text-success">{{ invoice.advance_amount|currency }}</span>
+                            </div>
+                        {% endif %}
+                        <div class="total-row total-final">
+                            <span class="total-label">Balance:</span>
+                            <span class="total-value">{{ invoice.net_amount_due|currency }}</span>
+                        </div>
                     </div>
                 </div>
             </div>

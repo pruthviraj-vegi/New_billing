@@ -6,7 +6,8 @@ from django.db.models import Sum, Count
 from django.contrib.admin import SimpleListFilter
 from django.utils import timezone
 from datetime import timedelta
-from .models import Customer
+from .models import Customer, Payment
+from invoice.models import PaymentAllocation
 
 
 class CustomerStatusFilter(SimpleListFilter):
@@ -97,6 +98,7 @@ class CustomerAdmin(admin.ModelAdmin):
         "email_display",
         "address_display",
         "credit_balance_display",
+        "payment_allocation_info",
         "status_display",
         "created_at",
         "actions_display",
@@ -147,6 +149,7 @@ class CustomerAdmin(admin.ModelAdmin):
         "reset_credit_balance",
         "add_credit_to_selected",
         "export_customer_data",
+        "auto_reallocate_payments",
     ]
 
     # Pagination
@@ -173,7 +176,7 @@ class CustomerAdmin(admin.ModelAdmin):
         """Display email with proper formatting."""
         if obj.email:
             return format_html('<a href="mailto:{}">{}</a>', obj.email, obj.email)
-        return format_html('<span style="color: #999;">No Email</span>')
+        return "No Email"
 
     email_display.short_description = "Email"
     email_display.admin_order_field = "email"
@@ -181,35 +184,41 @@ class CustomerAdmin(admin.ModelAdmin):
     def address_display(self, obj):
         """Display shortened address."""
         if obj.address:
-            short_addr = (
-                obj.address[:50] + "..." if len(obj.address) > 50 else obj.address
-            )
-            return format_html('<span title="{}">{}</span>', obj.address, short_addr)
-        return format_html('<span style="color: #999;">No Address</span>')
+            return obj.address[:50] + "..." if len(obj.address) > 50 else obj.address
+        return "No Address"
 
     address_display.short_description = "Address"
 
     def credit_balance_display(self, obj):
-        """Display credit balance with color coding."""
-        if obj.store_credit_balance > 0:
-            return format_html(
-                '<span style="color: #059669; font-weight: bold;">₹{}</span>',
-                obj.store_credit_balance,
-            )
-        return format_html('<span style="color: #6b7280;">₹0.00</span>')
+        """Display credit balance."""
+        return f"₹{obj.store_credit_balance}"
 
     credit_balance_display.short_description = "Credit Balance"
     credit_balance_display.admin_order_field = "store_credit_balance"
 
-    def status_display(self, obj):
-        """Display status with badge."""
-        if obj.is_deleted:
-            return format_html(
-                '<span style="background: #fef2f2; color: #dc2626; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;">INACTIVE</span>'
-            )
-        return format_html(
-            '<span style="background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;">ACTIVE</span>'
+    def payment_allocation_info(self, obj):
+        """Display payment allocation information."""
+        from invoice.models import Invoice, PaymentAllocation
+        
+        # Count payments and allocations
+        payments = Payment.objects.filter(
+            customer=obj, 
+            payment_type=Payment.PaymentType.Paid,
+            is_deleted=False
         )
+        
+        total_payments = payments.count()
+        total_unallocated = sum(payment.unallocated_amount for payment in payments)
+        
+        if total_payments > 0:
+            return f"Payments: {total_payments}, Unallocated: ₹{total_unallocated}"
+        return "No payments"
+
+    payment_allocation_info.short_description = "Payment Info"
+
+    def status_display(self, obj):
+        """Display status."""
+        return "INACTIVE" if obj.is_deleted else "ACTIVE"
 
     status_display.short_description = "Status"
     status_display.admin_order_field = "is_deleted"
@@ -220,8 +229,8 @@ class CustomerAdmin(admin.ModelAdmin):
         delete_url = reverse("admin:customer_customer_delete", args=[obj.id])
 
         return format_html(
-            '<a href="{}" style="margin-right: 5px; color: #3b82f6;" title="View/Edit"><i class="fas fa-edit"></i></a>'
-            '<a href="{}" style="color: #ef4444;" title="Delete" onclick="return confirm(\'Are you sure?\')"><i class="fas fa-trash"></i></a>',
+            '<a href="{}" title="View/Edit">Edit</a> | '
+            '<a href="{}" title="Delete" onclick="return confirm(\'Are you sure?\')">Delete</a>',
             view_url,
             delete_url,
         )
@@ -283,20 +292,107 @@ class CustomerAdmin(admin.ModelAdmin):
 
     export_customer_data.short_description = "Export customer data"
 
+    def auto_reallocate_payments(self, request, queryset):
+        """Auto reallocate payments using FIFO method for selected customers."""
+        from .views_credit import _auto_allocate_payment
+        from invoice.models import Invoice,PaymentAllocation
+        from django.db.models import Sum
+        
+        total_customers = 0
+        total_allocations = 0
+        
+        for customer in queryset:
+            # Get all credit invoices and payments for this customer
+            invoices = Invoice.objects.filter(
+                customer=customer, 
+                payment_type=Invoice.PaymentType.CREDIT
+            ).order_by("invoice_date")
+            
+            payments = Payment.objects.filter(
+                customer=customer, 
+                payment_type=Payment.PaymentType.Paid,
+                is_deleted=False
+            ).order_by("payment_date")
+
+            if payments.exists():
+                # Delete all existing allocations for this customer
+                deleted_count = PaymentAllocation.objects.filter(
+                    payment__customer=customer, payment__is_deleted=False
+                ).count()
+                
+                PaymentAllocation.objects.filter(
+                    payment__customer=customer, payment__is_deleted=False
+                ).delete()
+
+                # Reset all invoice paid amounts and status
+                for invoice in invoices:
+                    invoice.paid_amount = 0
+                    invoice.payment_status = Invoice.PaymentStatus.UNPAID
+                    invoice.save()
+
+                # Reset all payment unallocated amounts
+                for payment in payments:
+                    payment.unallocated_amount = payment.amount
+                    payment.save()
+
+                # Implement FIFO allocation
+                for payment in payments:
+                    _auto_allocate_payment(payment, request.user)
+                
+                total_customers += 1
+                total_allocations += deleted_count
+
+        if total_customers > 0:
+            self.message_user(
+                request,
+                f"Successfully auto-allocated payments for {total_customers} customer(s) using FIFO method.",
+                level="SUCCESS",
+            )
+        else:
+            self.message_user(
+                request,
+                "No customers with payments found for auto-allocation.",
+                level="WARNING",
+            )
+
+    auto_reallocate_payments.short_description = "Auto reallocate payments (FIFO)"
+
+    def auto_reallocate_single_customer(self, request, customer_id):
+        """Auto reallocate payments for a single customer."""
+        from .views_credit import auto_reallocate
+        from django.shortcuts import redirect
+        from django.contrib import messages
+        
+        try:
+            # Call the auto_reallocate view function
+            response = auto_reallocate(request, customer_id)
+            return response
+        except Exception as e:
+            messages.error(request, f"Error during auto reallocation: {str(e)}")
+            return redirect('admin:customer_customer_change', customer_id)
+
     # Override get_queryset to include related data
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("created_by")
 
-    # Custom admin site configuration
-    class Media:
-        css = {"all": ("admin/css/customer_admin.css",)}
-        js = ("admin/js/customer_admin.js",)
 
     # Override change form template
     def change_view(self, request, object_id, form_url="", extra_context=None):
         extra_context = extra_context or {}
         extra_context["show_save_and_continue"] = True
         extra_context["show_save_and_add_another"] = True
+        
+        # Add auto reallocate button context
+        customer = self.get_object(request, object_id)
+        if customer:
+            payments = Payment.objects.filter(
+                customer=customer, 
+                payment_type=Payment.PaymentType.Paid,
+                is_deleted=False
+            )
+            extra_context["has_payments"] = payments.exists()
+            extra_context["customer_id"] = customer.id
+        
         return super().change_view(request, object_id, form_url, extra_context)
 
     # Override add form template
@@ -304,6 +400,153 @@ class CustomerAdmin(admin.ModelAdmin):
         extra_context = extra_context or {}
         extra_context["show_save_and_add_another"] = True
         return super().add_view(request, form_url, extra_context)
+
+
+# Inline payments on customer detail for quick entry/visibility
+class PaymentInline(admin.TabularInline):
+    model = Payment
+    fields = [
+        "payment_date",
+        "payment_type",
+        "amount",
+        "notes",
+        "created_by",
+    ]
+    readonly_fields = []
+    extra = 0
+    show_change_link = True
+    autocomplete_fields = ["created_by"]
+    ordering = ["-payment_date", "-created_at"]
+
+
+# Attach payments inline to the customer admin
+CustomerAdmin.inlines = [PaymentInline]
+
+
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
+    """Admin interface for Payment model."""
+
+    list_display = [
+        "id",
+        "customer",
+        "payment_type",
+        "amount",
+        "payment_date",
+        "created_by",
+        "created_at",
+    ]
+
+    list_display_links = ["id", "customer"]
+
+    search_fields = [
+        "customer__name",
+        "customer__phone_number",
+        "notes",
+    ]
+
+    list_filter = [
+        "payment_type",
+        ("payment_date", admin.DateFieldListFilter),
+        ("created_at", admin.DateFieldListFilter),
+        "created_by",
+    ]
+
+    date_hierarchy = "payment_date"
+
+    readonly_fields = ["created_at", "updated_at"]
+
+    autocomplete_fields = ["customer", "created_by"]
+
+    list_per_page = 25
+    ordering = ["-payment_date", "-created_at"]
+    list_select_related = ["customer", "created_by"]
+    
+    # Admin actions
+    actions = ["auto_reallocate_selected_payments"]
+
+    # Keep the admin uncluttered
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "customer",
+                    "payment_type",
+                    "amount",
+                    "payment_date",
+                    "notes",
+                )
+            },
+        ),
+        (
+            "System",
+            {
+                "fields": ("created_by", "created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    def auto_reallocate_selected_payments(self, request, queryset):
+        """Auto reallocate selected payments using FIFO method."""
+        from .views_credit import _auto_allocate_payment
+        from invoice.models import Invoice, PaymentAllocation
+        
+        # Group payments by customer
+        customers = {}
+        for payment in queryset.filter(payment_type=Payment.PaymentType.Paid):
+            if payment.customer not in customers:
+                customers[payment.customer] = []
+            customers[payment.customer].append(payment)
+        
+        total_customers = 0
+        total_payments = 0
+        
+        for customer, payments in customers.items():
+            # Get all credit invoices for this customer
+            invoices = Invoice.objects.filter(
+                customer=customer, 
+                payment_type=Invoice.PaymentType.CREDIT
+            ).order_by("invoice_date")
+            
+            # Delete existing allocations for these payments
+            PaymentAllocation.objects.filter(
+                payment__in=payments, payment__is_deleted=False
+            ).delete()
+            
+            # Reset invoice paid amounts and status
+            for invoice in invoices:
+                invoice.paid_amount = 0
+                invoice.payment_status = Invoice.PaymentStatus.UNPAID
+                invoice.save()
+            
+            # Reset payment unallocated amounts
+            for payment in payments:
+                payment.unallocated_amount = payment.amount
+                payment.save()
+            
+            # Implement FIFO allocation
+            for payment in payments:
+                _auto_allocate_payment(payment, request.user)
+            
+            total_customers += 1
+            total_payments += len(payments)
+        
+        if total_customers > 0:
+            self.message_user(
+                request,
+                f"Successfully auto-allocated {total_payments} payment(s) for {total_customers} customer(s) using FIFO method.",
+                level="SUCCESS",
+            )
+        else:
+            self.message_user(
+                request,
+                "No 'Paid' payments found in selection for auto-allocation.",
+                level="WARNING",
+            )
+
+    auto_reallocate_selected_payments.short_description = "Auto reallocate selected payments (FIFO)"
 
 
 # Customize admin site

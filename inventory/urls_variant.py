@@ -5,6 +5,8 @@ app_name = "inventory_variant"
 
 urlpatterns = [
     path("", views_variant.variant_home, name="home"),
+    path("fetch/", views_variant.fetch_variants, name="fetch"),
+    path("download-data/", views_variant.download_variants, name="download_data"),
     path("<int:variant_id>/", views_variant.variant_details, name="details"),
     path(
         "create/<int:product_id>/",

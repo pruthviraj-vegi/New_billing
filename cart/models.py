@@ -3,7 +3,7 @@ from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from inventory.models import ProductVariant
-from base.stringProcess import StringProcessor
+from base.utility import StringProcessor
 from django.db.models import Sum, F, ExpressionWrapper, DecimalField
 from decimal import Decimal
 

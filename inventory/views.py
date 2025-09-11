@@ -1,23 +1,26 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.db.models import Sum, F
+from django.db.models import Sum, F, Q
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.mixins import LoginRequiredMixin
 from django.utils import timezone
-from django.views.generic import View, UpdateView, CreateView, DeleteView
+from django.views.generic import View, DeleteView
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+import json
 
-from django.db import transaction, IntegrityError
 from django.urls import reverse_lazy
 from .services import InventoryService
+
+from django.db import transaction
+
 from .forms import (
     ProductForm,
     VariantForm,
-    StockInForm,
-    AdjustmentInForm,
-    AdjustmentOutForm,
-    DamageForm,
 )
 from .models import Product, ProductVariant, InventoryLog
+
+from supplier.models import SupplierInvoice, Supplier
 
 
 def inventory_dashboard(request):
@@ -168,7 +171,8 @@ class CreateProduct(View):
         return render(request, self.template_name, self.get_context_data())
 
     def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
+        # Remove super() call since View doesn't have get_context_data
+        context = {}
         context["title"] = self.title
         context["product_form"] = self.product_form
         context["variant_form"] = self.variant_form
@@ -191,8 +195,9 @@ class CreateProduct(View):
                     variant_form.cleaned_data.get("supplier_invoice"),
                 )
                 messages.success(request, "Product created successfully")
-                return redirect("inventory:product_home")
+                return redirect("inventory_products:details", product_id=product.id)
         else:
+            print(product_form.errors, variant_form.errors)
             messages.error(request, "Please correct the errors below.")
             return render(request, self.template_name, self.get_context_data())
 
@@ -292,12 +297,9 @@ def variant_update(request, pk):
     return render(request, "inventory/variant_update.html", context)
 
 
-
 @login_required
 def supplier_invoice_tracking(request):
     """View to track inventory by supplier invoice"""
-    from django.db.models import Sum, Count, Q
-    from supplier.models import SupplierInvoice, Supplier
 
     # Get search and filter parameters
     search_query = request.GET.get("search", "")
@@ -377,12 +379,6 @@ def supplier_invoice_tracking(request):
             or 0
         )
 
-        sales_data = InventoryLog.objects.filter(
-            transaction_type="SALE", supplier_invoice__invoice_number=invoice_number
-        )
-
-        print(sales_data)
-
         # Get unique products in this invoice
         products_count = (
             InventoryLog.objects.filter(
@@ -405,6 +401,7 @@ def supplier_invoice_tracking(request):
                 "stock_in_quantity": stock_in,
                 "sales_quantity": sales,
                 "remaining_quantity": remaining,
+                "remaining_percentage": round(100 - (remaining / stock_in) * 100, 2),
                 "products_count": products_count,
             }
         )
@@ -426,7 +423,6 @@ def supplier_invoice_tracking(request):
 @login_required
 def supplier_invoice_details(request, invoice_number):
     """View to show detailed breakdown of a specific supplier invoice"""
-    from django.db.models import Sum, Q
 
     # Get search and filter parameters
     search_query = request.GET.get("search", "")
@@ -497,14 +493,28 @@ def supplier_invoice_details(request, invoice_number):
         sales = abs(
             InventoryLog.objects.filter(
                 supplier_invoice__invoice_number=invoice_number,
-                variant__barcode=barcode,
                 transaction_type="SALE",
+                variant__barcode=barcode,
             ).aggregate(total=Sum("quantity_change"))["total"]
             or 0
         )
 
         product["sales_quantity"] = sales
         product["remaining_quantity"] = product["stock_in_quantity"] - sales
+
+    total_sales = abs(
+        InventoryLog.objects.filter(
+            supplier_invoice__invoice_number=invoice_number,
+        ).aggregate(total=Sum("quantity_change"))["total"]
+        or 0
+    )
+    total_stock_in = (
+        InventoryLog.objects.filter(
+            supplier_invoice__invoice_number=invoice_number,
+            transaction_type__in=["STOCK_IN", "INITIAL"],
+        ).aggregate(total=Sum("quantity_change"))["total"]
+        or 0
+    )
 
     # Apply status filter after calculating remaining quantities
     if status_filter == "sold_out":
@@ -532,6 +542,9 @@ def supplier_invoice_details(request, invoice_number):
         "invoice_info": invoice_info,
         "products_in_invoice": products_in_invoice,
         "title": f"Invoice {invoice_number} Details",
+        "total_sales": total_sales,
+        "total_stock_in": total_stock_in,
+        "total_remaining": total_stock_in - total_sales,
         "search_query": search_query,
         "status_filter": status_filter,
         "sort_by": sort_by,
@@ -542,9 +555,7 @@ def supplier_invoice_details(request, invoice_number):
 @login_required
 def product_invoice_analytics(request, variant_id):
     """View to show analytics for a specific product variant by supplier invoice"""
-    from django.db.models import Sum
-    from django.utils import timezone
-
+    
     variant = get_object_or_404(ProductVariant, id=variant_id)
 
     # Get all supplier invoices for this variant
@@ -568,7 +579,7 @@ def product_invoice_analytics(request, variant_id):
 
         # Get sales for this invoice
         sales_logs = InventoryLog.objects.filter(
-            variant=variant,
+            product_variant=variant,
             supplier_invoice__invoice_number=invoice_number,
             transaction_type="SALE",
         )
@@ -578,7 +589,7 @@ def product_invoice_analytics(request, variant_id):
             stock_in_logs.aggregate(total=Sum("quantity_change"))["total"] or 0
         )
         total_sales = abs(
-            sales_logs.aggregate(total=Sum("quantity_change"))["total"] or 0
+            sales_logs.aggregate(total=Sum("quantity_allocated"))["total"] or 0
         )
         remaining = total_stock_in - total_sales
 
@@ -618,10 +629,7 @@ def product_invoice_analytics(request, variant_id):
 @login_required
 def supplier_analytics(request, supplier_id):
     """View to show analytics for a specific supplier"""
-    from django.db.models import Sum
-    from django.utils import timezone
-    from supplier.models import Supplier
-
+    
     supplier = get_object_or_404(Supplier, id=supplier_id)
 
     # Get all invoices for this supplier
@@ -652,8 +660,9 @@ def supplier_analytics(request, supplier_id):
         # Get sales for this invoice
         sales = abs(
             InventoryLog.objects.filter(
-                supplier_invoice__invoice_number=invoice_number, transaction_type="SALE"
-            ).aggregate(total=Sum("quantity_change"))["total"]
+                supplier_invoice__invoice_number=invoice_number,
+                transaction_type="SALE",
+            ).aggregate(total=Sum("quantity_allocated"))["total"]
             or 0
         )
 
@@ -678,3 +687,52 @@ def supplier_analytics(request, supplier_id):
         "title": f"{supplier.name} - Analytics",
     }
     return render(request, "inventory/supplier_analytics.html", context)
+
+
+@csrf_exempt
+@require_POST
+def create_size_ajax(request):
+    """AJAX view to create a new size"""
+    try:
+        data = json.loads(request.body)
+        name = data.get('name', '').strip()
+        description = data.get('description', '').strip()
+        
+        if not name:
+            return JsonResponse({
+                'success': False,
+                'error': 'Size name is required'
+            }, status=400)
+        
+        # Check if size already exists
+        if Size.objects.filter(name__iexact=name).exists():
+            return JsonResponse({
+                'success': False,
+                'error': f'Size "{name}" already exists'
+            }, status=400)
+        
+        # Create new size
+        size = Size.objects.create(
+            name=name,
+            description=description
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'size': {
+                'id': size.id,
+                'name': size.name,
+                'description': size.description
+            }
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON data'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)

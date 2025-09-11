@@ -224,6 +224,7 @@ if (typeof minMaxUrl !== "undefined") {
     },
   });
 }
+
 function downloadFile(type) {
   // Get all search parameters
   let params = getAllSearchParams();

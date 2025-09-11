@@ -2,180 +2,183 @@
 {% load static %}
 {% load custom_filters %}
 {% block title %}
-    Products Management
+    Product Variants Management
 {% endblock title %}
 {% block content %}
     <!-- Page Header -->
     <div class="page-header">
-        <h2 class="page-title">Products Management</h2>
+        <h2 class="heading page-title">Product Variants Management</h2>
         <div class="page-actions">
-            <a href="{% url 'customer:download' %}" class="btn">
+            <a href="{% url 'inventory_variant:download_data' %}" class="btn">
                 <i class="fas fa-download"></i>
                 Download
             </a>
-            {% comment %} <a href="{% url 'inventory_variant:create' product.id %}" class="btn btn-primary">
-                <i class="fas fa-plus"></i>
-                New Product
-            </a> {% endcomment %}
         </div>
     </div>
     <!-- Breadcrumb Navigation -->
     <nav class="breadcrumb breadcrumb-right">
-        <a href="#" class="breadcrumb-item">Products</a>
+        <a href="{% url 'inventory_products:home' %}" class="breadcrumb-item">Products</a>
         <span class="breadcrumb-separator">/</span>
-        <span class="breadcrumb-active">All Products</span>
+        <span class="breadcrumb-active">All Variants</span>
     </nav>
     <!-- Search and Filter Section -->
     <div class="search-filter-section">
         <form method="get" class="search-filter-form" id="searchForm">
             <div class="search-group search-expanded">
                 <i class="fas fa-search search-icon"></i>
-                <input type="search"
-                       name="search"
-                       class="search-input"
-                       placeholder="Search products..."
-                       value="{{ search_query }}"
-                       id="searchInput"
-                       autofocus>
+                <div class="search-input-container">
+                    <div class="word-suggestion-container">
+                    <input type="search"
+                           name="search"
+                           class="search-input word-suggestion-input"
+                           placeholder="Search by product name, brand, barcode, or description..."
+                           value=""
+                           id="searchInput"
+                           data-url="{% url 'suggestions:product_variant_all' %}"
+                           autocomplete="off"
+                           autofocus>
+                    </div>
+                    <div class="filter-tags-inline" id="filterTagsInline">
+                        <!-- Filter tags will be dynamically added here -->
+                    </div>
+                </div>
             </div>
-            <select name="status" class="filter-select" id="statusFilter">
-                <option value="">All Status</option>
-                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
-                <option value="inactive"
-                        {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
-            </select>
-            <select name="sort" class="filter-select" id="sortSelect">
-                <option value="-created_at"
-                        {% if sort_by == '-created_at' %}selected{% endif %}>Newest First</option>
-                <option value="created_at"
-                        {% if sort_by == 'created_at' %}selected{% endif %}>Oldest First</option>
-                <option value="name" {% if sort_by == 'name' %}selected{% endif %}>Name A-Z</option>
-                <option value="-name" {% if sort_by == '-name' %}selected{% endif %}>Name Z-A</option>
-                <option value="phone_number"
-                        {% if sort_by == 'phone_number' %}selected{% endif %}>Phone A-Z</option>
-                <option value="-phone_number"
-                        {% if sort_by == '-phone_number' %}selected{% endif %}>Phone Z-A</option>
-            </select>
+            <button type="button" class="btn btn-primary" id="toggleFiltersBtn">
+                <i class="fas fa-filter"></i>
+                Filters
+            </button>
             <button type="submit" class="btn btn-primary">
                 <i class="fas fa-search"></i>
                 Search
             </button>
+            
+            <!-- Hidden Filters Row (inside form for filter-tags.js to work) -->
+            <div class="filters-row" id="filtersRow" style="display: none;">
+                <div class="filters-container">
+                    <select name="category" class="filter-select" id="categoryFilter">
+                        <option value="">All Categories</option>
+                        {% for category in categories %}
+                            <option value="{{ category.id }}">
+                                {{ category.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <select name="color" class="filter-select" id="colorFilter">
+                        <option value="">All Colors</option>
+                        {% for color in colors %}
+                            <option value="{{ color.id }}">
+                                {{ color.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <select name="size" class="filter-select" id="sizeFilter">
+                        <option value="">All Sizes</option>
+                        {% for size in sizes %}
+                            <option value="{{ size.id }}">
+                                {{ size.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <select name="status" class="filter-select" id="statusFilter">
+                        <option value="">All Status</option>
+                        {% for value, label in status_choices %}
+                            <option value="{{ value }}">
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <select name="stock" class="filter-select" id="stockFilter">
+                        <option value="">All Stock</option>
+                        <option value="in_stock">In Stock</option>
+                        <option value="out_of_stock">Out of Stock</option>
+                        <option value="low_stock">Low Stock</option>
+                    </select>
+                </div>
+            </div>
         </form>
     </div>
     <!-- Data Table -->
     <div class="table-container">
-        {% if data %}
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>ID</th>
-                        <th>Barcode</th>
-                        <th>Brand</th>
-                        <th>Product Name</th>
-                        <th>Quantity</th>
-                        <th>Price</th>
-                        <th>Discount</th>
-                        <th>Final Price</th>
-                        <th>Date</th>
-                        <th class="text-right">Actions</th>
+                    <th class="sortable" data-sort="id">ID</th>
+                    <th class="sortable" data-sort="barcode">Barcode</th>
+                    <th class="sortable" data-sort="product__brand">Brand</th>
+                    <th class="sortable" data-sort="product__name">Product Name</th>
+                    <th>Size/Color</th>
+                    <th class="sortable" data-sort="quantity">Quantity</th>
+                    <th class="sortable" data-sort="mrp">MRP</th>
+                    <th>Discount</th>
+                    <th>Final Price</th>
+                    <th class="sortable" data-sort="status">Status</th>
+                    <th class="sortable" data-sort="created_at">Date</th>
+                    <th>Actions</th>
                     </tr>
-                </thead>
-                <tbody>
-                    {% for variant in data %}
-                        <tr>
-                            <td>{{ variant.id }}</td>
-                            <td>
-                                <strong>{{ variant.barcode }}</strong>
-                            </td>
-                            <td>{{ variant.product.brand }}</td>
-                            <td>
-                                <div>
-                                    <div class="font-weight-bold text-primary">{{ variant.product.name }}</div>
-                                    <small class="text-muted">
-                                        {% if variant.size %}{{ variant.size.name }}{% endif %}
-                                        {% if variant.color %}- {{ variant.color.name }}{% endif %}
-                                    </small>
-                                </div>
-                            </td>
-                            <td>
-                                <strong>{{ variant.quantity|floatformat:0 }}</strong>
-                                {% if variant.damaged_quantity > 0 %}
-                                    <br>
-                                    <small class="text-danger">Damaged: {{ variant.damaged_quantity|floatformat:0 }}</small>
-                                {% endif %}
-                            </td>
-                            <td>{{ variant.mrp|currency }}</td>
-                            <td>
-                                {% if variant.discount_percentage > 0 %}
-                                    <span class="text-success">-{{ variant.discount_percentage }}%</span>
-                                {% else %}
-                                    <span class="text-muted">0%</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <strong>{{ variant.final_price|currency }}</strong>
-                            </td>
-                            <td>{{ variant.created_at|date:"M d, Y" }}</td>
-                            <td>
-                                <div class="action-buttons">
-                                    <a href="{% url 'inventory_variant:details' variant.id %}"
-                                       class="btn-action btn-view"
-                                       title="View Product Details">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                    <a href="#" class="btn-action btn-edit" title="Edit Product">
-                                        <i class="fas fa-edit"></i>
-                                    </a>
-                                    <a href="#" class="btn-action btn-delete" title="Delete Variant">
-                                        <i class="fas fa-trash"></i>
-                                    </a>
-                                </div>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
+                    </thead>
+                <tbody id="table_body">
+                    <!-- Empty table body - data will be loaded via AJAX -->
+                    <tr>
+                        <td colspan="12" class="text-center" style="padding: 2rem;">
+                            <i class="fas fa-spinner fa-spin" style="color: var(--primary); margin-right: 0.5rem;"></i>
+                            Loading variants...
+                            <br><br>
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="window.retryTableLoad()">
+                                <i class="fas fa-refresh"></i>
+                                Retry
+                            </button>
+                                </td>
+                            </tr>
+                    </tbody>
+                    <tfoot id="table_footer">
+                        <!-- Pagination will be loaded here via AJAX -->
+                    </tfoot>
             </table>
-        {% else %}
-            <div class="empty-state">
-                <i class="fas fa-boxes"></i>
-                <h3>No Products Found</h3>
-                <p>No products match your search criteria. Try adjusting your filters or add a new product.</p>
-                <a href="{% url 'inventory:product_create' %}"
-                   class="btn btn-primary"
-                   id="addFirstProductBtn">
-                    <i class="fas fa-plus"></i>
-                    Add First Product
-                </a>
-            </div>
-        {% endif %}
+    </div>
+    
+    <!-- Pagination Wrapper - Outside table for better styling -->
+    <div class="pagination-wrapper" id="pagination_wrapper">
+        <!-- Pagination will be loaded here via AJAX -->
     </div>
 {% endblock content %}
+
 {% block extra_js %}
+
     <script>
-        // Search and filter functionality
-    document.addEventListener('DOMContentLoaded', function() {
-    const searchInput = document.getElementById('searchInput');
-    const statusFilter = document.getElementById('statusFilter');
-    const sortSelect = document.getElementById('sortSelect');
-    const searchForm = document.getElementById('searchForm');
-    
-    // Auto-submit form on filter change
-    statusFilter.addEventListener('change', function() {
-        searchForm.submit();
-    });
-    
-    sortSelect.addEventListener('change', function() {
-        searchForm.submit();
-    });
-    
-    // Debounced search
-    let searchTimeout;
-    searchInput.addEventListener('input', function() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(function() {
-            searchForm.submit();
-        }, 500);
-        });
-    });
+        urls = {
+            fetch: '{% url "inventory_variant:fetch" %}',
+            suggestions: '{% url "suggestions:product_variant_all" %}',
+        }
     </script>
+    
+    <!-- Toggle Filters Functionality -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const toggleBtn = document.getElementById('toggleFiltersBtn');
+            const filtersRow = document.getElementById('filtersRow');
+            
+            toggleBtn.addEventListener('click', function() {
+                if (filtersRow.style.display === 'none') {
+                    filtersRow.style.display = 'block';
+                    toggleBtn.innerHTML = '<i class="fas fa-filter"></i> Hide Filters';
+                    toggleBtn.classList.add('active');
+                } else {
+                    filtersRow.style.display = 'none';
+                    toggleBtn.innerHTML = '<i class="fas fa-filter"></i> Filters';
+                    toggleBtn.classList.remove('active');
+                }
+            });
+        });
+    </script>
+
+    <!-- Load the simple table AJAX -->
+    <script src="{% static 'js/fetchAjax.js' %}"></script>
+    
+    <!-- Load the filter tags manager -->
+    <script src="{% static 'js/filter-tags.js' %}"></script>
+    
+    <!-- Load the word suggestion system -->
+    <script src="{% static 'js/word-suggestion.js' %}"></script>
+            
+    
 {% endblock extra_js %}

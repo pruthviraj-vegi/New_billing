@@ -28,5 +28,8 @@ urlpatterns = [
     path("inventory/products/variants/", include("inventory.urls_variant")),
     path("cart/", include("cart.urls")),
     path("invoice/", include("invoice.urls")),
-    
+    path("report/", include("report.urls")),
+    path("user/", include("user.urls")),
+    path("setting/", include("setting.urls")),
+    path("suggestions/", include("base.urls_suggestions")),
 ]

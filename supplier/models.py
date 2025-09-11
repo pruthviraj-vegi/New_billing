@@ -8,7 +8,7 @@ from django.db import models
 from django.conf import settings
 from base.manager import SoftDeleteModel, phone_regex
 from django.utils import timezone
-from base.stringProcess import StringProcessor
+from base.utility import StringProcessor
 from django.utils.text import slugify
 from datetime import datetime
 from django.db.models import Sum

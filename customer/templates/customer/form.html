@@ -3,6 +3,7 @@
 {% block title %}
   {{ title }}
 {% endblock title %}
+
 {% block content %}
   <!-- Page Header -->
   <div class="page-header">
@@ -117,6 +118,22 @@
               </div>
             {% endif %}
           </div>
+          <!-- Referred By Field -->
+          <div class="form-group {% if form.referred_by.errors %}has-error{% endif %}">
+            <label for="{{ form.referred_by.id_for_label }}" class="form-label">{{ form.referred_by.label }}</label>
+            {{ form.referred_by }}
+            <small class="form-help">Optional: type to search and select who referred this customer</small>
+            {% if form.referred_by.errors %}
+              <div class="field-errors">
+                {% for error in form.referred_by.errors %}
+                  <div class="error-message">
+                    <i class="fas fa-exclamation-circle"></i>
+                    {{ error }}
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
           <!-- Form Actions -->
           <div class="form-actions">
             <button type="submit" class="btn btn-primary">
@@ -137,3 +154,17 @@
     </div>
   </div>
 {% endblock content %}
+{% block extra_js %}
+  
+   <script>
+     $(document).ready(function() {
+       $('#id_referred_by').select2({
+         placeholder: "Type to search customers...",
+         width: '100%'
+       });
+   });
+   </script>
+{% endblock extra_js %}
+
+
+

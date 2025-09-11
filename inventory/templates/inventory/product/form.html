@@ -108,7 +108,12 @@
               <!-- Category Field -->
               <div class="form-group {% if form.category.errors %}has-error{% endif %}">
                 <label for="{{ form.category.id_for_label }}" class="form-label">{{ form.category.label }}</label>
+                <div class="input-group">
                 {{ form.category }}
+                <button type="button" class="btn btn-outline-primary" onclick="openModelPopup('{% url "inventory:category_create" %}', 'new_category', '{{ form.category.id_for_label }}')" title="Add New Category">
+                  <i class="fas fa-plus"></i>
+                </button>
+                </div>
                 <small class="form-help">Select the appropriate category for this product</small>
                 {% if form.category.errors %}
                   <div class="field-errors">
@@ -126,7 +131,12 @@
               <!-- Cloth Type Field -->
               <div class="form-group {% if form.cloth_type.errors %}has-error{% endif %}">
                 <label for="{{ form.cloth_type.id_for_label }}" class="form-label">{{ form.cloth_type.label }}</label>
+                <div class="input-group">
                 {{ form.cloth_type }}
+                <button type="button" class="btn btn-outline-primary" onclick="openModelPopup('{% url "inventory:cloth_create" %}', 'new_cloth', '{{ form.cloth_type.id_for_label }}')" title="Add New Color">
+                  <i class="fas fa-plus"></i>
+                </button>
+                </div>
                 <small class="form-help">e.g., Cotton, Silk, Polyester, Denim</small>
                 {% if form.cloth_type.errors %}
                   <div class="field-errors">

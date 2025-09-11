@@ -3,6 +3,7 @@
 # ------------------------------------------------------------------
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from .managers import CustomUserManager
 
@@ -67,3 +68,34 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     @property
     def is_manager(self):
         return self.role in [self.Roles.OWNER, self.Roles.MANAGER]
+
+    @property
+    def username(self):
+        return self.full_name
+
+
+class LoginEvent(models.Model):
+    """Audit log of user login/logout events."""
+
+    class EventType(models.TextChoices):
+        LOGIN = "LOGIN", "Login"
+        LOGOUT = "LOGOUT", "Logout"
+
+    user = models.ForeignKey("user.CustomUser", on_delete=models.CASCADE, related_name="login_events")
+    event_type = models.CharField(max_length=10, choices=EventType.choices)
+    occurred_at = models.DateTimeField(default=timezone.now, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=512, null=True, blank=True)
+    session_key = models.CharField(max_length=40, null=True, blank=True)
+
+    class Meta:
+        ordering = ("-occurred_at",)
+        indexes = [
+            models.Index(fields=["user", "occurred_at"]),
+            models.Index(fields=["event_type", "occurred_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} {self.event_type} {self.occurred_at.isoformat()}"
+
+

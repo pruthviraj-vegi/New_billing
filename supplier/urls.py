@@ -8,7 +8,6 @@ urlpatterns = [
     path("", views.home, name="home"),
     path("dashboard/", views.dashboard, name="dashboard"),
     path("create/", views.CreateSupplier.as_view(), name="create"),
-    path("search/", views.search_suppliers_ajax, name="search_ajax"),
     path("<int:pk>/", views.supplier_detail, name="detail"),
     path("<int:pk>/edit/", views.EditSupplier.as_view(), name="edit"),
     path("<int:pk>/delete/", views.DeleteSupplier.as_view(), name="delete"),

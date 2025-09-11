@@ -8,7 +8,7 @@ import random, string
 from django.core.exceptions import ValidationError
 from .manager import ProductVariantManager
 
-from base.stringProcess import StringProcessor
+from base.utility import StringProcessor
 
 User = settings.AUTH_USER_MODEL
 
@@ -86,6 +86,22 @@ class Size(models.Model):
         super().save(*args, **kwargs)
 
 
+class HsnCode(models.Model):
+    code = models.CharField(max_length=100, unique=True)
+    gst_percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.code
+
+    def save(self, *args, **kwargs):
+        self.code = StringProcessor(self.code).toUppercase()
+        self.description = StringProcessor(self.description).toTitle()
+        super().save(*args, **kwargs)
+
+
 class Product(SoftDeleteModel):
     class ProductStatus(models.TextChoices):
         DRAFT = "DRAFT", "Draft"
@@ -98,18 +114,13 @@ class Product(SoftDeleteModel):
         blank=True, null=True, help_text="The description of the product"
     )
     category = models.ForeignKey(
-        Category, on_delete=models.PROTECT, related_name="products"
+        Category, on_delete=models.PROTECT, related_name="products", null=True, blank=True
     )
     cloth_type = models.ForeignKey(
-        ClothType, on_delete=models.PROTECT, related_name="products"
+        ClothType, on_delete=models.PROTECT, related_name="products", null=True, blank=True
     )
-    hsn_code = models.CharField(
-        max_length=100,
-        blank=True,
-        null=True,
-        validators=[
-            RegexValidator(regex=r"^\d{4,8}$", message="HSN code must be 4-8 digits")
-        ],
+    hsn_code = models.ForeignKey(
+        HsnCode, on_delete=models.PROTECT, related_name="products", null=True, blank=True
     )
     gst_percentage = models.DecimalField(
         max_digits=5,
@@ -138,8 +149,6 @@ class Product(SoftDeleteModel):
         ]
 
     def clean(self):
-        if self.hsn_code and len(self.hsn_code) < 4:
-            raise ValidationError("HSN code must be 4 digits")
 
         if self.gst_percentage < 0 or self.gst_percentage > 100:
             raise ValidationError("GST percentage must be between 0 and 100")
@@ -552,6 +561,49 @@ class InventoryLog(SoftDeleteModel):
         help_text="Selling price at time of transaction",
         default=Decimal("0"),
     )
+    # Sale tracking (for SALE transactions)
+    invoice_item = models.ForeignKey(
+        "invoice.invoiceitem",  # Adjust app name as needed
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inventory_logs",
+        help_text="Customer invoice item for sale transactions",
+    )
+    selling_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Selling price per unit for sale transactions",
+    )
+    # FIFO tracking - links sale transactions to their source stock
+    source_inventory_log = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="allocated_sales",
+        help_text="For SALE transactions: points to the STOCK_IN/INITIAL log this sale is allocated from",
+    )
+
+    allocated_quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="For SALE transactions: quantity allocated from source_inventory_log",
+    )
+
+    # Remaining quantity for FIFO allocation
+    remaining_quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        help_text="For STOCK_IN/INITIAL: remaining quantity available for allocation",
+    )
+
     total_value = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -584,7 +636,18 @@ class InventoryLog(SoftDeleteModel):
         return f"{self.variant} changed by {self.quantity_change} on {self.timestamp.strftime('%Y-%m-%d')}"
 
     def save(self, *args, **kwargs):
-        """Auto-calculate total value if not provided"""
-        if not self.total_value and self.quantity_change and self.purchase_price:
-            self.total_value = abs(self.quantity_change) * self.purchase_price
+        # Auto-calculate total value
+        if not self.total_value and self.quantity_change:
+            if self.transaction_type in ["STOCK_IN", "INITIAL"] and self.purchase_price:
+                self.total_value = abs(self.quantity_change) * self.purchase_price
+            elif self.transaction_type == "SALE" and self.selling_price:
+                self.total_value = abs(self.quantity_change) * self.selling_price
+
+        # Initialize remaining quantity for stock in transactions
+        if (
+            self.transaction_type in ["STOCK_IN", "INITIAL"]
+            and self.remaining_quantity is None
+        ):
+            self.remaining_quantity = abs(self.quantity_change)
+
         super().save(*args, **kwargs)

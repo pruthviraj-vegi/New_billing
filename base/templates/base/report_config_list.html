@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}
+    {{ page_title|default:"Report Configurations" }}
+{% endblock title %}
+
+{% block content %}
+    <div class="page-header">
+        <h2 class="page-title">{{ page_title|default:"Report Configurations" }}</h2>
+        <div class="page-actions">
+            <a href="{% url 'setting:report_config_create' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i>
+                New Configuration
+            </a>
+        </div>
+    </div>
+
+    <form method="get" class="search-filter-form" id="searchForm">
+        <div class="search-group">
+            <i class="fas fa-search search-icon"></i>
+            <input type="search" name="search" class="search-input" placeholder="Search..." value="{{ search_query }}">
+        </div>
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-search"></i>
+            Search
+        </button>
+    </form>
+
+    <div class="table-container">
+        {% if configs %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Paper</th>
+                    <th>Default</th>
+                    <th>Active</th>
+                    <th>Created</th>
+                    <th class="text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cfg in configs %}
+                <tr>
+                    <td>{{ cfg.get_report_type_display }}</td>
+                    <td>{{ cfg.get_paper_size_display }}</td>
+                    <td>{% if cfg.is_default %}<span class="badge text-success">Yes</span>{% else %}-{% endif %}</td>
+                    <td>{% if cfg.is_active %}<span class="badge text-success">Active</span>{% else %}<span class="badge text-danger">Inactive</span>{% endif %}</td>
+                    <td>{{ cfg.created_at|date:"Y-m-d" }}</td>
+                    <td class="text-right">
+                        <a href="{% url 'setting:report_config_detail' cfg.id %}" class="btn btn-sm">View</a>
+                        <a href="{% url 'setting:report_config_edit' cfg.id %}" class="btn btn-sm btn-primary">Edit</a>
+                        <a href="{% url 'setting:report_config_delete' cfg.id %}" class="btn btn-sm btn-danger">Delete</a>
+                        {% if not cfg.is_default %}
+                            <form method="post" action="{% url 'setting:set_default_config' cfg.id %}" style="display:inline;">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-warning">Set Default</button>
+                            </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon"><i class="fas fa-file-alt"></i></div>
+            <h3>No report configurations</h3>
+            <a href="{% url 'setting:report_config_create' %}" class="btn btn-primary">Create first</a>
+        </div>
+        {% endif %}
+    </div>
+{% endblock %}
+
+

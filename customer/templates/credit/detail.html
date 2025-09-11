@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% load static %}
+{% load custom_filters %}
+
+{% block title %}Credit Ledger - {{ customer.name }}{% endblock title %}
+
+{% block content %}
+  <!-- Page Header -->
+  <div class="page-header">
+    <h2 class="page-title">{{ customer.name }} - Credit Ledger</h2>
+    <div class="page-actions">
+      <a href="{% url 'customer:credit_home' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i>
+        Back
+      </a>
+      <a href="{% url 'customer:credit_create' customer.id %}" class="btn btn-primary">
+        <i class="fas fa-plus"></i>
+        Add Payment
+      </a>
+      <a href="{% url 'customer:credit_auto_reallocate' customer.id %}" class="btn btn-warning">
+        <i class="fas fa-sync"></i>
+        Auto Reallocate
+      </a>
+    </div>
+  </div>
+  <!-- Breadcrumb Navigation -->
+  <nav class="breadcrumb breadcrumb-right">
+    <a href="{% url 'base:home' %}" class="breadcrumb-item">Dashboard</a>
+    <span class="breadcrumb-separator">/</span>
+    <a href="{% url 'customer:credit_home' %}" class="breadcrumb-item">Credit</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-active">{{ customer.name }}</span>
+  </nav>
+
+  <!-- Main Layout (mirror invoice detail theme) -->
+  <div class="col d-flex flex-row gap-2">
+    <!-- Left Column - Customer Details and Summary -->
+    <div class="col-md-2 d-flex flex-column gap-2">
+      <!-- Details Column -->
+      <div class="column details-column">
+        <div class="column-header">
+          <h3>
+            <i class="fas fa-user"></i> Customer Details
+          </h3>
+        </div>
+        <div class="details-info-compact">
+          <div class="detail-name-compact">
+            <h4>{{ customer.name }}</h4>
+            <span class="detail-status {% if not customer.is_deleted %}status-active{% else %}status-inactive{% endif %}">
+              {% if customer.is_deleted %}Inactive{% else %}Active{% endif %}
+            </span>
+          </div>
+          <div class="detail-contact-compact">
+            <div class="contact-item">
+              <i class="fas fa-phone"></i>
+              <span>{{ customer.phone_number|phone_number }}</span>
+            </div>
+            {% if customer.email %}
+            <div class="contact-item">
+              <i class="fas fa-envelope"></i>
+              <span>{{ customer.email }}</span>
+            </div>
+            {% endif %}
+            {% if customer.address %}
+            <div class="contact-item">
+              <i class="fas fa-map-marker-alt"></i>
+              <span>{{ customer.address }}</span>
+            </div>
+            {% endif %}
+            <div class="contact-item">
+              <i class="fas fa-calendar"></i>
+              <span>{{ customer.created_at|date:"M d, Y" }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary Cards (compact) -->
+      <div class="summary-card-compact" id="creditSummaryCard">
+        <div class="summary-icon-compact">
+          <i class="fas fa-money-bill"></i>
+        </div>
+        <div class="summary-content-compact">
+          <h4>Amounts</h4>
+          <div class="summary-stats-compact">
+            <div class="stat-item-compact">
+              <span class="stat-number-compact">{{ total_credit|currency_nonDecimal }}</span>
+              <span class="stat-label-compact">Total Credit</span>
+            </div>
+            <div class="stat-item-compact">
+              <span class="stat-number-compact">{{ total_debit|currency_nonDecimal }}</span>
+              <span class="stat-label-compact">Total Debit</span>
+            </div>
+            <div class="stat-item-compact">
+              <span class="stat-number-compact">{{ balance|currency_nonDecimal }}</span>
+              <span class="stat-label-compact">Outstanding</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Payment Summary Card (FIFO Auto-Allocation) -->
+      <div class="summary-card-compact" id="paymentSummaryCard">
+        <div class="summary-icon-compact">
+          <i class="fas fa-credit-card"></i>
+        </div>
+        <div class="summary-content-compact">
+          <h4>Payments (FIFO)</h4>
+          <div class="summary-stats-compact">
+            <div class="stat-item-compact">
+              <span class="stat-number-compact">{{ total_debit|currency_nonDecimal }}</span>
+              <span class="stat-label-compact">Total Paid</span>
+            </div>
+            <div class="stat-item-compact">
+              <span class="stat-number-compact">{{ unallocated_amount|currency_nonDecimal }}</span>
+              <span class="stat-label-compact">Unallocated</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column - Ledger Table -->
+    <div class="col-md-10 d-flex flex-column gap-2">
+      <div class="table-section" id="ledgerSection">
+        <div class="table-header">
+          <h3>
+            <i class="fas fa-file-invoice-dollar"></i> Ledger
+          </h3>
+          <span class="item-count">{{ rows|length }} entries</span>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Reference</th>
+                <th>Method</th>
+                <th>Notes</th>
+                <th class="text-right">Credit</th>
+                <th class="text-right">Debit</th>
+                <th class="text-right">Allocated</th>
+                <th class="text-right">Outstanding</th>
+                <th class="text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                <tr>
+                  <td>{{ row.date|date:"M j, Y" }}</td>
+                  <td>
+                    {% if row.type == "Invoice" %}
+                      <span class="badge badge-info">Invoice</span>
+                    {% else %}
+                      <span class="badge badge-secondary">Payment</span>
+                    {% endif %}
+                  </td>
+                  <td># {{ row.ref }}</td>
+                  <td>
+                    {% if row.type == "Payment" and row.method %}
+                      <span class="badge badge-secondary">{{ row.method }}</span>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td>{{ row.notes|default:"-"|truncatechars:15 }}</td>
+                  <td class="text-right">
+                    {% if row.type == "Invoice" %}
+                      <span title="Final Amount: ₹{{ row.gross_amount|floatformat:2 }} - ₹{{ row.discount_amount|floatformat:2 }} (discount) - ₹{{ row.advance_amount|floatformat:2 }} (advance) = ₹{{ row.credit|floatformat:2 }}">
+                        {{ row.credit|currency }}
+                      </span>
+                    {% else %}
+                      {{ row.credit|currency }}
+                    {% endif %}
+                  </td>
+                  <td class="text-right">{{ row.debit|currency }}</td>
+                  <td class="text-right">
+                    {% if row.type == "Invoice" %}
+                      {% if row.paid_amount > 0 %}
+                        <span class="text-success">{{ row.paid_amount|currency }}</span>
+                        {% if row.payment_status == "PAID" %}
+                          <br><small class="secondary-text text-success">✓ Fully Paid</small>
+                        {% elif row.payment_status == "PARTIALLY_PAID" %}
+                          <br><small class="secondary-text text-warning">⚠ Partially Paid</small>
+                        {% endif %}
+                      {% else %}
+                        <span class="text-muted">₹0.00</span>
+                      {% endif %}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td class="text-right">
+                    {% if row.type == "Invoice" %}
+                      {% if row.outstanding > 0 %}
+                        <span class="text-danger">{{ row.outstanding|currency }}</span>
+                      {% else %}
+                        <span class="text-success">₹0.00</span>
+                      {% endif %}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td class="text-center">
+                    {% if row.type == "Invoice" %}
+                      <a href="{% url 'invoice:detail' row.id %}"
+                                       class="btn-action btn-view"
+                                       title="View Invoice Details">
+                                        <i class="fas fa-eye"></i>
+                       </a>
+                    {% else %}
+                      <a href="{% url 'customer:payment_edit' row.id %}"
+                          class="btn-action btn-edit"
+                          title="Edit Payment">
+                          <i class="fas fa-edit"></i>
+                      </a>
+                      <a href="{% url 'customer:payment_delete' row.id %}"
+                          class="btn-action btn-delete"
+                          title="Delete Payment">
+                          <i class="fas fa-trash"></i>
+                      </a>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="10" class="text-center">No ledger entries</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            {% comment %} <tfoot>
+              <tr>
+                <th colspan="5" class="text-right">Totals</th>
+                <th class="text-right">{{ total_credit|currency }}</th>
+                <th class="text-right">{{ total_debit|currency }}</th>
+                <th class="text-right">{{ total_allocated|currency }}</th>
+                <th class="text-right">{{ total_outstanding|currency }}</th>
+                <th></th>
+              </tr>
+            </tfoot> {% endcomment %}
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+

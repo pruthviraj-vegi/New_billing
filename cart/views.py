@@ -1,6 +1,8 @@
-from django.shortcuts import render
+from email import message
+from django.shortcuts import render, redirect
 from .models import Cart, CartItem
 from .forms import CartForm
+from django.contrib import messages
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -102,6 +104,20 @@ class EditCart(UpdateView):
     def get_success_url(self):
         return reverse("cart:getCartData", kwargs={"pk": self.object.id})
 
+
+def auto_cart_create(request):
+    """Auto create cart"""
+
+    carts = Cart.objects.filter(status="OPEN", created_by=request.user).order_by("-created_at")
+
+    for cart in carts:
+        if cart.get_item_count() == 0:
+            messages.success(request, "Open cart existed, redirecting to it")
+            return redirect("cart:getCartData", pk=cart.id)
+
+    cart = Cart.objects.create(name="Walk in", created_by=request.user)
+    messages.success(request, "Cart created successfully")
+    return redirect("cart:getCartData", pk=cart.id)
 
 # API Views for Cart Operations
 @api_view(["POST"])

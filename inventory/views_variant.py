@@ -1,34 +1,170 @@
+from unicodedata import category
 from django.shortcuts import render, get_object_or_404
-from .models import ProductVariant, InventoryLog, Product
+from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
 from django.contrib import messages
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, UpdateView
-from .forms import VariantForm
-from django.db import IntegrityError
-from .services import InventoryService
-from django.db import transaction
+from django.core.paginator import Paginator
+from django.template.loader import render_to_string
+from django.db import IntegrityError, transaction
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.shortcuts import redirect
-from .forms import StockInForm, AdjustmentInForm, AdjustmentOutForm, DamageForm
+from django.db.models import Q, F
+from .models import ProductVariant, InventoryLog, Product, Category, Color, Size
+from .forms import (
+    VariantForm,
+    StockInForm,
+    AdjustmentInForm,
+    AdjustmentOutForm,
+    DamageForm,
+)
+from .services import InventoryService
+
+VALID_SORT_FIELDS = {
+    "id",
+    "-id",
+    "barcode",
+    "-barcode",
+    "product__brand",
+    "-product__brand",
+    "product__name",
+    "-product__name",
+    "product__category__name",
+    "-product__category__name",
+    "size__name",
+    "-size__name",
+    "color__name",
+    "-color__name",
+    "quantity",
+    "-quantity",
+    "mrp",
+    "-mrp",
+    "status",
+    "-status",
+    "created_at",
+    "-created_at",
+    "updated_at",
+    "-updated_at",
+}
+
+VARIANTS_PER_PAGE = 20
 
 
+@login_required
 def variant_home(request):
-    variants = ProductVariant.objects.all().order_by("-created_at")
-    return render(request, "inventory/product_variant/home.html", {"data": variants})
+    """Product variant management main page - initial load only."""
+    # Get filter options for the template
+    categories = Category.objects.all().order_by("name")
+    colors = Color.objects.all().order_by("name")
+    sizes = Size.objects.all().order_by("name")
+
+    context = {
+        "categories": categories,
+        "colors": colors,
+        "sizes": sizes,
+        "status_choices": ProductVariant.VariantStatus.choices,
+    }
+    return render(request, "inventory/product_variant/home.html", context)
+
+
+@login_required
+def fetch_variants(request):
+    """AJAX endpoint to fetch variants with search, filter, and pagination."""
+    # Get search and filter parameters
+    search_query = request.GET.get("search", "")
+    category_filter = request.GET.get("category", "")
+    color_filter = request.GET.get("color", "")
+    size_filter = request.GET.get("size", "")
+    status_filter = request.GET.get("status", "")
+    stock_filter = request.GET.get("stock", "")
+    sort_by = request.GET.get("sort", "")
+
+    # Start with all variants
+    variants = ProductVariant.objects.select_related(
+        "product", "product__category", "size", "color"
+    ).all()
+
+    # Apply search filter
+    filters = Q()
+    if search_query:
+        filters &= (
+            Q(product__brand__icontains=search_query)
+            | Q(product__name__icontains=search_query)
+            | Q(barcode__icontains=search_query)
+            | Q(product__description__icontains=search_query)
+            | Q(product__category__name__icontains=search_query)
+        )
+
+    # Apply category filter
+    if category_filter:
+        filters &= Q(product__category_id=category_filter)
+
+    # Apply color filter
+    if color_filter:
+        filters &= Q(color_id=color_filter)
+
+    # Apply size filter
+    if size_filter:
+        filters &= Q(size_id=size_filter)
+
+    # Apply status filter
+    if status_filter:
+        filters &= Q(status=status_filter)
+
+    # Apply stock filter
+    if stock_filter == "in_stock":
+        filters &= Q(quantity__gt=0)
+    elif stock_filter == "out_of_stock":
+        filters &= Q(quantity=0)
+    elif stock_filter == "low_stock":
+        filters &= Q(quantity__lte=F("minimum_quantity"), quantity__gt=0)
+
+    variants = variants.filter(filters)
+
+    # Apply sorting
+    if sort_by not in VALID_SORT_FIELDS:
+        sort_by = "-created_at"
+    variants = variants.order_by(sort_by)
+
+    # Pagination
+    paginator = Paginator(variants, VARIANTS_PER_PAGE)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    # Render the HTML template
+    context = {
+        "page_obj": page_obj,
+        "total_count": paginator.count,
+        "search_query": search_query,
+    }
+
+    # Render the table content (without pagination)
+    table_html = render_to_string(
+        "inventory/product_variant/fetch.html", context, request=request
+    )
+
+    # Render pagination separately
+    pagination_html = ""
+    if page_obj and page_obj.paginator.num_pages > 1:
+        pagination_html = render_to_string(
+            "common/_pagination.html", context, request=request
+        )
+
+    return JsonResponse(
+        {"html": table_html, "pagination": pagination_html, "success": True}
+    )
 
 
 def variant_details(request, variant_id):
     """Detailed view for a single product variant with stock management options"""
-    from django.shortcuts import get_object_or_404
 
     variant = get_object_or_404(ProductVariant, id=variant_id)
 
     # Get recent activity logs for this variant (only for active variants)
-    recent_logs = (
-        variant.inventory_logs.filter(variant__is_deleted=False)
-        .select_related("supplier_invoice", "supplier_invoice__supplier")
-        .order_by("-timestamp")[:20]
-    )
+    recent_logs = variant.inventory_logs.select_related(
+        "supplier_invoice", "supplier_invoice__supplier"
+    ).order_by("-timestamp")[:20]
 
     # Calculate stock statistics
     stock_stats = {
@@ -252,7 +388,7 @@ class StockInCreate(LoginRequiredMixin, CreateView):
         variant_id = self.kwargs.get("variant_id")
         if variant_id:
             try:
-                variant = ProductVariant.objects.get(id=variant_id, is_deleted=False)
+                variant = ProductVariant.objects.get(id=variant_id)
                 initial["variant"] = variant
                 initial["purchase_price"] = variant.purchase_price
                 initial["mrp"] = variant.mrp
@@ -263,7 +399,9 @@ class StockInCreate(LoginRequiredMixin, CreateView):
     def get_success_url(self):
         variant_id = self.kwargs.get("variant_id")
         if variant_id:
-            return reverse_lazy("inventory:variant_details", kwargs={"pk": variant_id})
+            return reverse_lazy(
+                "inventory_variant:details", kwargs={"variant_id": variant_id}
+            )
         else:
             # If no variant_id, redirect to products page
             messages.error(
@@ -354,7 +492,9 @@ class AdjustmentInCreate(LoginRequiredMixin, CreateView):
     def get_success_url(self):
         variant_id = self.kwargs.get("variant_id")
         if variant_id:
-            return reverse_lazy("inventory:variant_details", kwargs={"pk": variant_id})
+            return reverse_lazy(
+                "inventory_variant:details", kwargs={"variant_id": variant_id}
+            )
         return reverse_lazy("inventory:product_home")
 
     def form_valid(self, form):
@@ -434,7 +574,9 @@ class AdjustmentOutCreate(LoginRequiredMixin, CreateView):
     def get_success_url(self):
         variant_id = self.kwargs.get("variant_id")
         if variant_id:
-            return reverse_lazy("inventory:variant_details", kwargs={"pk": variant_id})
+            return reverse_lazy(
+                "inventory_variant:details", kwargs={"variant_id": variant_id}
+            )
         return reverse_lazy("inventory:product_home")
 
     def form_valid(self, form):
@@ -479,6 +621,76 @@ class AdjustmentOutCreate(LoginRequiredMixin, CreateView):
         return super().form_invalid(form)
 
 
+@login_required
+def download_variants(request):
+    """Download variants data as JSON."""
+    variants = ProductVariant.objects.select_related(
+        "product", "product__category", "size", "color"
+    ).all()
+    data = []
+
+    for variant in variants:
+        data.append(
+            {
+                "id": variant.id,
+                "barcode": variant.barcode,
+                "brand": variant.product.brand,
+                "product_name": variant.product.name,
+                "category": (
+                    variant.product.category.name if variant.product.category else None
+                ),
+                "size": variant.size.name if variant.size else None,
+                "color": variant.color.name if variant.color else None,
+                "quantity": str(variant.quantity),
+                "mrp": str(variant.mrp),
+                "discount_percentage": str(variant.discount_percentage),
+                "final_price": str(variant.final_price),
+                "status": variant.status,
+                "created_at": variant.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+
+    response = JsonResponse(data, safe=False)
+    response["Content-Disposition"] = 'attachment; filename="variants.json"'
+    return response
+
+
+@login_required
+def search_variants_ajax(request):
+    """AJAX endpoint for real-time variant search."""
+    search_query = request.GET.get("q", "")
+
+    if len(search_query) < 2:
+        return JsonResponse({"variants": []})
+
+    variants = ProductVariant.objects.select_related(
+        "product", "product__category"
+    ).filter(
+        Q(product__brand__icontains=search_query)
+        | Q(product__name__icontains=search_query)
+        | Q(barcode__icontains=search_query)
+    )[
+        :10
+    ]  # Limit to 10 results
+
+    data = []
+    for variant in variants:
+        data.append(
+            {
+                "id": variant.id,
+                "barcode": variant.barcode,
+                "brand": variant.product.brand,
+                "product_name": variant.product.name,
+                "category": (
+                    variant.product.category.name if variant.product.category else None
+                ),
+                "status": variant.status,
+            }
+        )
+
+    return JsonResponse({"variants": data})
+
+
 class DamageCreate(LoginRequiredMixin, CreateView):
     template_name = "inventory/product_variant/inventory_operation_form.html"
     form_class = DamageForm
@@ -493,7 +705,7 @@ class DamageCreate(LoginRequiredMixin, CreateView):
         variant_id = self.kwargs.get("variant_id")
         if variant_id:
             try:
-                variant = ProductVariant.objects.get(id=variant_id, is_deleted=False)
+                variant = ProductVariant.objects.get(id=variant_id)
                 context["selected_variant"] = variant
             except ProductVariant.DoesNotExist:
                 messages.error(self.request, "Selected variant not found.")
@@ -505,7 +717,7 @@ class DamageCreate(LoginRequiredMixin, CreateView):
         variant_id = self.kwargs.get("variant_id")
         if variant_id:
             try:
-                variant = ProductVariant.objects.get(id=variant_id, is_deleted=False)
+                variant = ProductVariant.objects.get(id=variant_id)
                 initial["variant"] = variant
             except ProductVariant.DoesNotExist:
                 messages.error(self.request, "Selected variant not found.")
@@ -514,7 +726,9 @@ class DamageCreate(LoginRequiredMixin, CreateView):
     def get_success_url(self):
         variant_id = self.kwargs.get("variant_id")
         if variant_id:
-            return reverse_lazy("inventory:variant_details", kwargs={"pk": variant_id})
+            return reverse_lazy(
+                "inventory_variant:details", kwargs={"variant_id": variant_id}
+            )
         return reverse_lazy("inventory:product_home")
 
     def form_valid(self, form):
@@ -523,9 +737,7 @@ class DamageCreate(LoginRequiredMixin, CreateView):
                 # Get the variant
                 variant_id = self.kwargs.get("variant_id")
                 if variant_id:
-                    variant = get_object_or_404(
-                        ProductVariant, id=variant_id, is_deleted=False
-                    )
+                    variant = get_object_or_404(ProductVariant, id=variant_id)
                 else:
                     # If no variant_id, redirect to operations page
                     messages.error(

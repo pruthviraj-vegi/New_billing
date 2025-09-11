@@ -7,6 +7,7 @@ urlpatterns = [
     # Template view for main cart page
     path("", views.CartMainPageView.as_view(), name="main_page"),
     path("create/", views.CreateCart.as_view(), name="create_cart"),
+    path("auto-create/", views.auto_cart_create, name="auto_cart_create"),
     path("<int:pk>/", views.getCartData, name="getCartData"),
     path("<int:pk>/edit/", views.EditCart.as_view(), name="edit_cart"),
     

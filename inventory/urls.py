@@ -7,7 +7,7 @@ urlpatterns = [
     # Dashboard
     path("dashboard/", views.inventory_dashboard, name="dashboard"),
     path("low-stock/", views.low_stock_page, name="low_stock"),
-    # ),
+    path("full-product/create/", views.CreateProduct.as_view(), name="product_create"),
     path(
         "variant/<int:pk>/delete/",
         views.DeleteProductVariant.as_view(),
@@ -35,8 +35,11 @@ urlpatterns = [
     path("size/create/", _views.CreateSize.as_view(), name="size_create"),
     path("size/<int:pk>/edit/", _views.UpdateSize.as_view(), name="size_edit"),
     path("size/<int:pk>/delete/", _views.DeleteSize.as_view(), name="size_delete"),
+    path("size/create-ajax/", views.create_size_ajax, name="size_create_ajax"),
     # Category Management
     path("category/", _views.category_home, name="category_home"),
+    path("category/fetch/", _views.fetch_categories, name="category_fetch"),
+    path("category/suggestions/", _views.search_suggestions, name="category_suggestions"),
     path("category/create/", _views.CreateCategory.as_view(), name="category_create"),
     path(
         "category/<int:pk>/edit/", _views.UpdateCategory.as_view(), name="category_edit"

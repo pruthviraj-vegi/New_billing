@@ -1,1 +1,7 @@
 __pycache__/
+*.pyc
+read me/*
+venv/*
+__pycache__/*
+_desizn/*
+*.sh

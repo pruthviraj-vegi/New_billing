@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% load static %}
+{% load custom_filters %}
 {% block title %}
     Categories Management
 {% endblock title %}
 {% block content %}
     <!-- Page Header -->
     <div class="page-header">
-        <h2 class="page-title">Categories Management</h2>
+        <h2 class="heading page-title">Categories Management</h2>
         <div class="page-actions">
             <a href="{% url 'inventory:category_create' %}" class="btn btn-primary">
                 <i class="fas fa-plus"></i>
@@ -16,7 +17,7 @@
     </div>
     <!-- Breadcrumb Navigation -->
     <nav class="breadcrumb breadcrumb-right">
-        <a href="{% url 'inventory:category_home' %}" class="breadcrumb-item">Categories</a>
+        <a href="#" class="breadcrumb-item">Categories</a>
         <span class="breadcrumb-separator">/</span>
         <span class="breadcrumb-active">All Categories</span>
     </nav>
@@ -25,21 +26,29 @@
         <form method="get" class="search-filter-form" id="searchForm">
             <div class="search-group search-expanded">
                 <i class="fas fa-search search-icon"></i>
-                <input type="search"
-                       name="search"
-                       class="search-input"
-                       placeholder="Search categories..."
-                       value="{{ search_query }}"
-                       id="searchInput"
-                       autofocus />
+                <div class="search-input-container">
+                    <div class="word-suggestion-container">
+                        <input type="search"
+                               name="search"
+                               class="search-input word-suggestion-input"
+                               placeholder="Search categories by name or description..."
+                               value=""
+                               id="searchInput"
+                               data-url="{% url 'inventory:category_suggestions' %}"
+                               autocomplete="off"
+                               autofocus>
+                    </div>
+                    <div class="filter-tags-inline" id="filterTagsInline">
+                        <!-- Filter tags will be dynamically added here -->
+                    </div>
+                </div>
             </div>
             <select name="sort" class="filter-select" id="sortSelect">
-                <option value="-created_at"
-                        {% if sort_by == '-created_at' %}selected{% endif %}>Newest First</option>
-                <option value="created_at"
-                        {% if sort_by == 'created_at' %}selected{% endif %}>Oldest First</option>
-                <option value="name" {% if sort_by == 'name' %}selected{% endif %}>Name A-Z</option>
-                <option value="-name" {% if sort_by == '-name' %}selected{% endif %}>Name Z-A</option>
+                <option value="">-------</option>
+                <option value="-created_at">Newest First</option>
+                <option value="created_at">Oldest First</option>
+                <option value="name">Name A-Z</option>
+                <option value="-name">Name Z-A</option>
             </select>
             <button type="submit" class="btn btn-primary">
                 <i class="fas fa-search"></i>
@@ -47,92 +56,62 @@
             </button>
         </form>
     </div>
+    
     <!-- Data Table -->
     <div class="table-container">
-        {% if categories %}
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Category</th>
-                        <th>Description</th>
-                        <th>Products</th>
-                        <th>Variants</th>
-                        <th>Created</th>
-                        <th class="text-right">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for category in categories %}
-                        <tr>
-                            <td>{{ category.id }}</td>
-                            <td>
-                                <div>
-                                    <div class="fw-bold text-primary">{{ category.name|default:'N/A' }}</div>
-                                </div>
-                            </td>
-                            <td>{{ category.description|default:'No description' }}</td>
-                            <td>
-                                <span class="stat-value">{{ category.products.count }}</span>
-                            </td>
-                            <td>
-                                <span class="stat-value">{{ category.products.count }}</span>
-                            </td>
-                            <td>{{ category.created_at|date:'M d, Y' }}</td>
-                            <td>
-                                <div class="action-buttons">
-                                    <a href="{% url 'inventory:category_edit' category.id %}"
-                                       class="btn-action btn-edit"
-                                       title="Edit Category">
-                                        <i class="fas fa-edit"></i>
-                                    </a>
-                                    <a href="{% url 'inventory:category_delete' category.id %}"
-                                       class="btn-action btn-delete"
-                                       title="Delete Category">
-                                        <i class="fas fa-trash"></i>
-                                    </a>
-                                </div>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% else %}
-            <div class="empty-state">
-                <i class="fas fa-folder"></i>
-                <h3>No Categories Found</h3>
-                <p>No categories match your search criteria. Try adjusting your filters or add a new category.</p>
-                <a href="{% url 'inventory:category_create' %}"
-                   class="btn btn-primary"
-                   id="addFirstCategoryBtn">
-                    <i class="fas fa-plus"></i>
-                    Add First Category
-                </a>
-            </div>
-        {% endif %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th class="sortable" data-sort="id">ID</th>
+                    <th class="sortable" data-sort="name">Category</th>
+                    <th>Description</th>
+                    <th>Products</th>
+                    <th>Variants</th>
+                    <th class="sortable" data-sort="created_at">Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="table_body">
+                <!-- Empty table body - data will be loaded via AJAX -->
+                <tr>
+                    <td colspan="7" class="text-center" style="padding: 2rem;">
+                        <div class="loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            Loading categories...
+                        </div>
+                        <br><br>
+                        <button type="button" class="btn btn-sm" onclick="window.retryTableLoad()">
+                            <i class="fas fa-refresh"></i>
+                            Retry
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Pagination Wrapper - Outside table for better styling -->
+    <div class="pagination-wrapper" id="pagination_wrapper">
+        <!-- Pagination will be loaded here via AJAX -->
     </div>
 {% endblock content %}
 {% block extra_js %}
+
     <script>
-// Search and filter functionality
-document.addEventListener('DOMContentLoaded', function() {
-    const searchInput = document.getElementById('searchInput');
-    const sortSelect = document.getElementById('sortSelect');
-    const searchForm = document.getElementById('searchForm');
-    
-    // Auto-submit form on filter change
-    sortSelect.addEventListener('change', function() {
-        searchForm.submit();
-    });
-    
-    // Debounced search
-    let searchTimeout;
-    searchInput.addEventListener('input', function() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(function() {
-            searchForm.submit();
-        }, 500);
-    });
-});
+        urls = {
+            fetch: '{% url "inventory:category_fetch" %}',
+            suggestions: '{% url "inventory:category_suggestions" %}',
+        }
     </script>
+
+    <!-- Load the simple table AJAX -->
+    <script src="{% static 'js/fetchAjax.js' %}"></script>
+    
+    <!-- Load the filter tags manager -->
+    <script src="{% static 'js/filter-tags.js' %}"></script>
+    
+    <!-- Load the word suggestion system -->
+    <script src="{% static 'js/word-suggestion.js' %}"></script>
+
+    
 {% endblock extra_js %}

@@ -1,5 +1,8 @@
 from django import template
 import locale
+import base64
+from datetime import datetime, timedelta
+from django.conf import settings
 
 locale.setlocale(locale.LC_ALL, "en_IN")
 
@@ -26,6 +29,7 @@ def currency(value, arg=None):
             monetary=False,
         )
     except (TypeError, ValueError) as e:
+        print(e)
         return value
 
 
@@ -91,6 +95,10 @@ def currency_abbreviation(value):
 def phone_number(value):
     return f"+91 {value}"
 
+@register.filter(name="b64encode")
+def base64_encode(value):
+    return base64.b64encode(value).decode("utf-8")
+
 
 @register.filter(name="sub")
 def sub(value, arg):
@@ -99,6 +107,17 @@ def sub(value, arg):
         return float(value) - float(arg)
     except (TypeError, ValueError):
         return value
+
+
+@register.filter(name="div")
+def div(value, arg):
+    """Divide the value by the arg."""
+    try:
+        if float(arg) == 0:
+            return 0
+        return float(value) / float(arg)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 0
 
 
 @register.filter(name="status_badge")
@@ -120,3 +139,36 @@ def add_class(field, css_class):
     Usage: {{ form.field|add_class:"form-control" }}
     """
     return field.as_widget(attrs={"class": css_class})
+
+
+@register.filter(name="to_datetime")
+def to_datetime(value):
+    """Parse ISO 8601 string to datetime, or pass through datetime.
+
+    Returns None if parsing fails.
+    """
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        # Normalize Zulu suffix to fromisoformat compatible form
+        if text.endswith("Z"):
+            text = text[:-1]
+        try:
+            return datetime.fromisoformat(text)
+        except Exception:
+            return None
+    return None
+
+
+@register.filter(name="expiry")
+def expiry(value):
+    """Compute expiry datetime by adding INACTIVITY_TIMEOUT_SECONDS to value.
+
+    Accepts datetime or ISO string. Returns datetime or None.
+    """
+    dt = value if isinstance(value, datetime) else to_datetime(value)
+    if dt is None:
+        return None
+    timeout_seconds = getattr(settings, "INACTIVITY_TIMEOUT_SECONDS", 3 * 60 * 60)
+    return dt + timedelta(seconds=timeout_seconds)

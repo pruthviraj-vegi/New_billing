@@ -1,40 +1,90 @@
 from django.db import models
 from django.conf import settings
 from decimal import Decimal
-from customer.models import Customer
+from customer.models import Customer, Payment
 from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from inventory.models import ProductVariant
+from base.utility import get_financial_year, StringProcessor
+from base.manager import SoftDeleteModel
+from django.db import transaction
+from django.urls import reverse
+
+# Import organized components
+from .choices import (
+    InvoiceTypeChoices,
+    PaymentTypeChoices,
+    PaymentStatusChoices,
+    PaymentMethodChoices,
+    AuditTypeChoices,
+    AuditStatusChoices,
+    ChangeTypeChoices,
+    RefundTypeChoices,
+    RefundStatusChoices,
+    RefundReasonChoices,
+    ItemConditionChoices,
+    ItemReturnReasonChoices,
+)
+from .constraints import (
+    InvoiceConstraints,
+    InvoiceIndexes,
+    InvoiceItemConstraints,
+    AuditTableConstraints,
+    InvoiceAuditConstraints,
+    InvoiceSequenceConstraints,
+)
+from .managers import (
+    InvoiceManager,
+    InvoiceItemManager,
+    AuditTableManager,
+    InvoiceAuditManager,
+    PaymentAllocationManager,
+    ReturnInvoiceManager,
+    ReturnInvoiceItemManager,
+)
+from .mixins import (
+    InvoiceFinancialMixin,
+    InvoiceItemFinancialMixin,
+    InvoiceValidationMixin,
+    InvoiceItemValidationMixin,
+)
 
 User = settings.AUTH_USER_MODEL
 
 
-class Invoice(models.Model):
-    class TaxTreatment(models.TextChoices):
-        GST_BILL = "GST_BILL", "GST Bill"
-        CASH_BILL = "CASH_BILL", "Cash Bill"
+def get_next_sequence(invoice_type, financial_year):
+    """Atomically return both sequence number and formatted invoice number"""
+    with transaction.atomic():
+        seq, _ = InvoiceSequence.objects.select_for_update().get_or_create(
+            invoice_type=invoice_type,
+            financial_year=financial_year,
+            defaults={"last_number": 0},
+        )
+        seq.last_number += 1
+        seq.save(update_fields=["last_number"])
 
-    class InvoiceType(models.TextChoices):
-        CASH = "CASH", "Cash"
-        CREDIT = "CREDIT", "Credit"
+        sequence_no = seq.last_number
+        seq_str = str(sequence_no).zfill(3)
 
-    class PaymentStatus(models.TextChoices):
-        UNPAID = "UNPAID", "Unpaid"
-        PARTIALLY_PAID = "PARTIALLY_PAID", "Partially Paid"
-        PAID = "PAID", "Paid"
-        VOID = "VOID", "Void"
+        if invoice_type == Invoice.Invoice_type.CASH:
+            invoice_number = f"CASH/{financial_year}/{seq_str}"
+        else:
+            invoice_number = f"{financial_year}/{seq_str}"
 
-    class PaymentMethod(models.TextChoices):
-        CASH = "CASH", "Cash"
-        CHEQUE = "CHEQUE", "Cheque"
-        CASH_ON_DELIVERY = "CASH_ON_DELIVERY", "Cash on Delivery"
-        CREDIT_CARD = "CREDIT_CARD", "Credit Card"
-        DEBIT_CARD = "DEBIT_CARD", "Debit Card"
-        UPI = "UPI", "UPI"
-        ONLINE_PAYMENT = "ONLINE_PAYMENT", "Online Payment"
-        OTHER = "OTHER", "Other"
+        return sequence_no, invoice_number
 
+
+class Invoice(InvoiceFinancialMixin, InvoiceValidationMixin, models.Model):
+    """Main Invoice model with organized structure"""
+
+    # Use imported choices
+    Invoice_type = InvoiceTypeChoices
+    PaymentType = PaymentTypeChoices
+    PaymentStatus = PaymentStatusChoices
+    PaymentMethod = PaymentMethodChoices
+
+    sequence_no = models.PositiveIntegerField()  # strictly for ordering
     customer = models.ForeignKey(
         Customer,
         on_delete=models.PROTECT,
@@ -44,14 +94,26 @@ class Invoice(models.Model):
     invoice_number = models.CharField(
         max_length=50, unique=True
     )  # Remove null=True for auto-generation
-    invoice_tax = models.CharField(
-        max_length=20, choices=TaxTreatment.choices, default=TaxTreatment.GST_BILL
+    original_invoice_no = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        help_text="Original invoice number before conversion",
     )
     invoice_type = models.CharField(
-        max_length=20, choices=InvoiceType.choices, default=InvoiceType.CASH
+        max_length=20,
+        choices=InvoiceTypeChoices.choices,
+        default=InvoiceTypeChoices.GST,
+    )
+    payment_type = models.CharField(
+        max_length=20,
+        choices=PaymentTypeChoices.choices,
+        default=PaymentTypeChoices.CASH,
     )
     payment_status = models.CharField(
-        max_length=25, choices=PaymentStatus.choices, default=PaymentStatus.UNPAID
+        max_length=25,
+        choices=PaymentStatusChoices.choices,
+        default=PaymentStatusChoices.UNPAID,
     )
     amount = models.DecimalField(
         max_digits=12,
@@ -75,7 +137,9 @@ class Invoice(models.Model):
         help_text="Amount received in advance (only for credit invoices)",
     )
     payment_method = models.CharField(
-        max_length=25, choices=PaymentMethod.choices, default=PaymentMethod.CASH
+        max_length=25,
+        choices=PaymentMethodChoices.choices,
+        default=PaymentMethodChoices.CASH,
     )
     paid_amount = models.DecimalField(
         max_digits=12,
@@ -85,6 +149,7 @@ class Invoice(models.Model):
         help_text="Amount paid against this invoice",
     )
     invoice_date = models.DateTimeField(default=timezone.now)
+    financial_year = models.CharField(max_length=10, null=True, blank=True)
     due_date = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True, null=True)
     created_by = models.ForeignKey(
@@ -102,145 +167,55 @@ class Invoice(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Custom manager
+    objects = InvoiceManager()
+
     class Meta:
         ordering = ["-created_at"]
-        indexes = [
-            models.Index(fields=["customer", "payment_status"]),
-            models.Index(fields=["invoice_date"]),
-            models.Index(fields=["payment_status"]),
-            models.Index(fields=["invoice_tax"]),
-            models.Index(fields=["invoice_number"]),
-        ]
+        indexes = InvoiceIndexes.get_all_indexes()
+        constraints = InvoiceConstraints.get_all_constraints()
 
     def __str__(self):
         return self.invoice_number or f"Invoice-{self.id}"
 
     def clean(self):
-        # Validate discount doesn't exceed amount
-        if self.discount_amount and self.discount_amount > self.amount:
-            raise ValidationError("Discount amount cannot exceed invoice amount")
-
-        if self.discount_amount and self.discount_amount < 0:
-            raise ValidationError("Discount amount cannot be negative")
-
-        # Validate advance doesn't exceed total payable
-        if self.advance_amount and self.advance_amount > self.total_payable:
-            raise ValidationError("Advance amount cannot exceed total payable amount")
-
-        if self.advance_amount and self.advance_amount < 0:
-            raise ValidationError("Advance amount cannot be negative")
-
-        # Validate total payments don't exceed total payable
-        total_received = self.advance_amount or 0 + self.paid_amount or 0
-        if total_received and total_received > self.total_payable:
-            raise ValidationError(
-                "Total received amount cannot exceed total payable amount"
-            )
+        """Validate invoice data using mixin validation"""
+        self.validate_financial_amounts()
 
     def save(self, *args, **kwargs):
-        # Auto-generate invoice number if not provided
-        if not self.invoice_number:
-            prefix = "GST" if self.invoice_tax == self.TaxTreatment.GST_BILL else "CASH"
-
-            # Get the last invoice number for this tax treatment
-            last_invoice = (
-                Invoice.objects.filter(
-                    invoice_tax=self.invoice_tax, invoice_number__startswith=prefix
-                )
-                .order_by("-id")
-                .first()
-            )
-
-            if last_invoice and last_invoice.invoice_number:
-                try:
-                    # Extract number from last invoice (e.g., "GST-005" -> 5)
-                    last_num = int(last_invoice.invoice_number.split("-")[-1])
-                    next_num = last_num + 1
-                except (ValueError, IndexError):
-                    next_num = 1
-            else:
-                next_num = 1
-
-            self.invoice_number = f"{prefix}-{next_num:03d}"
-
-        # Automatically set advance_amount to 0 and payment_status to PAID for cash invoices
-        if self.invoice_type == self.InvoiceType.CASH:
-            self.advance_amount = 0
-            self.payment_status = self.PaymentStatus.PAID
-
-        # Auto-update payment status for credit invoices
-        if self.invoice_type == self.InvoiceType.CREDIT:
+        # Automatically set advance_amount to 0 and mark as fully paid for cash invoices
+        if self.payment_type == PaymentTypeChoices.CASH:
+            self.advance_amount = Decimal("0")
+            # Ensure paid_amount exactly matches the constraint calculation to avoid precision issues
+            self.paid_amount = self.amount - self.discount_amount - self.advance_amount
+            self.payment_status = PaymentStatusChoices.PAID
+        else:
             self._update_payment_status()
+
+        if not self.financial_year or self.financial_year != get_financial_year(
+            self.invoice_date
+        ):
+            self.financial_year = get_financial_year(self.invoice_date)
+
+        if not self.sequence_no or not self.invoice_number:
+            self.sequence_no, self.invoice_number = get_next_sequence(
+                self.invoice_type, self.financial_year
+            )
 
         super().save(*args, **kwargs)
 
-    @property
-    def total_payable(self):
-        """Total amount customer owes after discount"""
-        return self.amount - self.discount_amount
-
-    @property
-    def net_amount_due(self):
-        """Amount still owed after advance payments"""
-        return self.total_payable - self.advance_amount
-
-    @property
-    def remaining_amount(self):
-        """Final amount still owed by customer"""
-        return self.net_amount_due - self.paid_amount
-
-    @property
-    def total_received(self):
-        """Total amount received from customer (advance + payments)"""
-        return self.advance_amount + self.paid_amount
-
-    @property
-    def is_fully_paid(self):
-        """Check if invoice is fully paid"""
-        return self.remaining_amount <= 0
-
-    @property
-    def is_overdue(self):
-        """Check if credit invoice is overdue"""
-        if (
-            self.invoice_type == self.InvoiceType.CREDIT
-            and self.due_date
-            and not self.is_fully_paid
-        ):
-            return timezone.now().date() > self.due_date.date()
-        return False
-
-    def _update_payment_status(self):
-        """Internal method to update payment status"""
-        if self.total_received >= self.total_payable:
-            self.payment_status = self.PaymentStatus.PAID
-        elif self.total_received > 0:
-            self.payment_status = self.PaymentStatus.PARTIALLY_PAID
-        else:
-            self.payment_status = self.PaymentStatus.UNPAID
-
-    def update_payment_status(self):
-        """Public method to update payment status and save"""
-        self._update_payment_status()
-        self.save(update_fields=["payment_status"])
-
-    def make_payment(self, amount, payment_method=None):
-        """Add a payment to this invoice"""
-        if amount <= 0:
-            raise ValidationError("Payment amount must be positive")
-
-        if amount > self.remaining_amount:
-            raise ValidationError("Payment amount exceeds remaining balance")
-
-        self.paid_amount += Decimal(str(amount))
-        if payment_method:
-            self.payment_method = payment_method
-
-        self.save()
-        return self.remaining_amount
+    @classmethod
+    def _get_next_sequence(cls, invoice_type, financial_year):
+        """Internal method to get next sequence number"""
+        return get_next_sequence(invoice_type, financial_year)
 
 
-class InvoiceItem(models.Model):
+class InvoiceItem(InvoiceItemFinancialMixin, InvoiceItemValidationMixin, models.Model):
+    """Invoice line items with organized structure"""
+
+    # Custom manager
+    objects = InvoiceItemManager()
+
     invoice = models.ForeignKey(
         Invoice, on_delete=models.CASCADE, related_name="invoice_items"
     )
@@ -249,7 +224,7 @@ class InvoiceItem(models.Model):
     )
     quantity = models.DecimalField(
         max_digits=12,
-        decimal_places=3,  # Allow fractional quantities (0.250 kg)
+        decimal_places=2,  # Standardized to 2 decimal places for consistency
         default=Decimal("1"),
         validators=[MinValueValidator(Decimal("0.01"))],
     )
@@ -283,110 +258,21 @@ class InvoiceItem(models.Model):
 
     class Meta:
         ordering = ["id"]
-        indexes = [
-            models.Index(fields=["invoice", "product_variant"]),
-            models.Index(fields=["product_variant"]),
-        ]
+        indexes = InvoiceItemConstraints.get_all_indexes()
         # Prevent duplicate items on same invoice
         unique_together = ["invoice", "product_variant"]
 
     def __str__(self):
-        # Cache the related data to avoid multiple DB hits
-        return f"#{self.invoice_id} - {self.quantity} × {self.product_variant_id}"
-
-    def save(self, *args, **kwargs):
-        """Auto-calculate totals before saving"""
-        # self.calculate_totals()
-        super().save(*args, **kwargs)
-
-        # Auto-create FIFO tracking after saving
-        self._create_fifo_tracking()
-
-    def _create_fifo_tracking(self):
-        """Create FIFO tracking records for this invoice item"""
         try:
-            # Check if FIFO tracking already exists
-            existing_tracking = self.fifo_tracking.exists()
-            if existing_tracking:
-                return
-
-            # Create FIFO tracking using the dedicated model
-            from .models import FIFOTracking
-
-            FIFOTracking.allocate_fifo_stock(self, self.quantity)
-
-        except Exception as e:
-            # Log error but don't fail the save
-            print(f"Error creating FIFO tracking: {e}")
-            pass
-
-    @property
-    def discount_amount_per_unit(self):
-        """Discount amount per unit"""
-        return self.mrp - self.unit_price
-
-    @property
-    def discount_percentage(self):
-        """Discount percentage based on MRP vs Selling Price"""
-        if self.mrp > 0:
-            return ((self.mrp - self.unit_price) / self.mrp) * 100
-        return Decimal("0")
-
-    @property
-    def total_discount_amount(self):
-        """Total discount amount for this line item"""
-        return self.discount_amount_per_unit * self.quantity
-
-    @property
-    def gross_amount(self):
-        """Total at MRP (before discount)"""
-        return self.quantity * self.mrp
-
-    @property
-    def net_amount(self):
-        """Total at selling price (after discount)"""
-        return self.quantity * self.unit_price
-
-    @property
-    def tax_rate(self):
-        """Get tax rate from product"""
-        return self.product_variant.product.tax
-
-    @property
-    def calculated_tax_amount(self):
-        """Tax amount based on net amount and product tax rate"""
-        if self.tax_rate > 0:
-            return (self.net_amount * self.tax_rate) / 100
-        return Decimal("0")
-
-    @property
-    def total_amount(self):
-        """Final total including tax"""
-        return self.net_amount + self.calculated_tax_amount
-
-    @property
-    def profit_amount_per_unit(self):
-        """Profit per unit"""
-        return self.unit_price - self.purchase_price
-
-    @property
-    def total_profit(self):
-        """Total profit for this line item"""
-        return self.profit_amount_per_unit * self.quantity
-
-    @property
-    def profit_margin_percentage(self):
-        """Profit margin as percentage of selling price"""
-        if self.unit_price > 0:
-            return (self.profit_amount_per_unit / self.unit_price) * 100
-        return Decimal("0")
-
-    @property
-    def markup_percentage(self):
-        """Markup percentage on purchase price"""
-        if self.purchase_price > 0:
-            return (self.profit_amount_per_unit / self.purchase_price) * 100
-        return Decimal("0")
+            # Use cached product name if available, otherwise fetch safely
+            product_name = getattr(self, "_cached_product_name", None)
+            if not product_name:
+                product_name = self.product_variant.get_name(
+                    include_barcode=False, include_variants=True
+                )
+            return f"#{self.invoice_id} - {self.quantity} × {product_name}"
+        except Exception:
+            return f"#{self.invoice_id} - {self.quantity} × Product #{self.product_variant_id}"
 
     # def calculate_totals(self):
     #     """Calculate and update cached total fields"""
@@ -413,76 +299,598 @@ class InvoiceItem(models.Model):
         self._cached_variant_name = self.product_variant.name
         return self
 
+    def clean(self):
+        """Custom validation for invoice items using mixin validation"""
+        self.validate_item_amounts()
 
-class SaleInvoiceLog(models.Model):
+
+class InvoiceSequence(models.Model):
+    """Sequence tracking for invoice numbering"""
+
+    invoice_type = models.CharField(
+        max_length=20,
+        choices=InvoiceTypeChoices.choices,
+        default=InvoiceTypeChoices.GST,
+    )
+    financial_year = models.CharField(max_length=10)  # Increased to match Invoice model
+    last_number = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = ("invoice_type", "financial_year")
+        indexes = InvoiceSequenceConstraints.get_all_indexes()
+
+
+class AuditTable(models.Model):
     """
-    Tracks which supplier invoice stock was sold for FIFO calculations.
-    This model links customer sales to supplier purchases without modifying existing models.
+    Table to store the audit trail for the audit trail view
+
+    audit_type: CONVERSION, RENUMBER, MODIFICATION
+    financial_year: 2024-2025
     """
 
-    invoice_item = models.ForeignKey(
-        InvoiceItem,
-        on_delete=models.CASCADE,
-        related_name="sale_invoice_log",
-        help_text="The invoice item being tracked",
-    )
-    # Supplier purchase side - links to InventoryLog entry
-    inventory_log = models.ForeignKey(
-        "inventory.InventoryLog",
-        on_delete=models.CASCADE,
-        related_name="sale_invoice_log",
-        help_text="Inventory log entry (STOCK_IN, INITIAL) from which this stock was allocated",
-    )
-    product_variant = models.ForeignKey(
-        "inventory.ProductVariant",
-        on_delete=models.CASCADE,
-        related_name="sale_invoice_log",
-        help_text="Product variant being tracked",
-    )
-    quantity_allocated = models.DecimalField(
-        max_digits=12,
-        decimal_places=3,
-        validators=[MinValueValidator(Decimal("0.001"))],
-        help_text="Quantity allocated from this inventory log entry",
-    )
-    purchase_price_per_unit = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        validators=[MinValueValidator(Decimal("0"))],
-        help_text="Purchase price per unit from inventory log",
+    # Use imported choices
+    AuditType = AuditTypeChoices
+    Status = AuditStatusChoices
+
+    # Custom manager
+    objects = AuditTableManager()
+
+    # Basic info
+    title = models.CharField(max_length=200, help_text="Audit session title")
+    description = models.TextField(
+        blank=True, help_text="Description of the audit session"
     )
 
-    allocated_at = models.DateTimeField(auto_now_add=True)
-    purchase_date = models.DateTimeField(
-        help_text="Date of purchase (from inventory log timestamp)"
+    # Audit type and scope
+    audit_type = models.CharField(
+        max_length=20,
+        choices=AuditTypeChoices.choices,
+        default=AuditTypeChoices.CONVERSION,
+    )
+
+    # Date range for the audit
+    start_date = models.DateField(help_text="Start date of audit period")
+    end_date = models.DateField(help_text="End date of audit period")
+
+    # Financial year context
+    financial_year = models.CharField(max_length=10, null=True, blank=True)
+
+    # Status tracking
+    status = models.CharField(
+        max_length=20,
+        choices=AuditStatusChoices.choices,
+        default=AuditStatusChoices.PENDING,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="audit_table_created_by",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = AuditTableConstraints.get_all_indexes()
+
+    def __str__(self):
+        return f"{self.title} ({self.audit_type})"
+
+    @property
+    def total_changes(self):
+        """Total number of changes in this audit session"""
+        return self.invoice_audits.count()
+
+    def clean(self):
+        """Custom validation for business rules"""
+
+        # Rule 1: Start <= End
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValidationError("Start date cannot be greater than end date.")
+
+        # Rule 2: Only one active audit per type
+        qs = AuditTable.objects.filter(
+            audit_type=self.audit_type,
+            status__in=[AuditStatusChoices.PENDING, AuditStatusChoices.IN_PROGRESS],
+        )
+        if self.pk:
+            qs = qs.exclude(pk=self.pk)  # exclude self when updating
+        if qs.exists():
+            raise ValidationError(f"An active {self.audit_type} audit already exists.")
+
+        # Rule 3: Special for CONVERSION
+        if self.audit_type == AuditTypeChoices.CONVERSION:
+            # Ensure same financial year
+            fy_start = get_financial_year(self.start_date)
+            fy_end = get_financial_year(self.end_date)
+            if fy_start != fy_end:
+                raise ValidationError(
+                    "For CONVERSION audits, start and end date must be in the same financial year."
+                )
+
+            # Ensure no overlap with previous conversions
+            last_conversion = (
+                AuditTable.objects.filter(audit_type=AuditTypeChoices.CONVERSION)
+                .exclude(pk=self.pk)
+                .order_by("-end_date")
+                .first()
+            )
+            if last_conversion and self.start_date < last_conversion.end_date:
+                raise ValidationError(
+                    f"New CONVERSION audit cannot start before "
+                    f"{last_conversion.end_date.strftime('%Y-%m-%d')}."
+                )
+
+    @transaction.atomic
+    def save(self, *args, **kwargs):
+
+        self.title = StringProcessor(self.title).toTitle()
+        self.description = StringProcessor(self.description).toTitle()
+
+        if self.start_date > self.end_date:
+            raise ValidationError("Start date cannot be greater than end date")
+
+        # Auto-fill financial year if missing
+        if not self.financial_year and self.start_date:
+            self.financial_year = get_financial_year(self.start_date)
+
+        if not self.status:
+            self.status = AuditStatusChoices.PENDING
+        super().save(*args, **kwargs)
+
+    def get_absolute_url(self):
+        if (
+            self.audit_type == AuditTypeChoices.CONVERSION
+            and self.status == AuditStatusChoices.PENDING
+        ):
+            return reverse("invoice:invoice_manager", kwargs={"pk": self.pk})
+
+        elif (
+            self.audit_type == AuditTypeChoices.CONVERSION
+            and self.status == AuditStatusChoices.COMPLETED
+        ):
+            return reverse("invoice:audit_detail", kwargs={"pk": self.pk})
+
+        return None
+
+
+class InvoiceAudit(models.Model):
+    """
+    Audit trail for invoice conversions and modifications
+    """
+
+    # Custom manager
+    objects = InvoiceAuditManager()
+
+    invoice = models.ForeignKey(
+        Invoice, on_delete=models.CASCADE, related_name="audit_logs"
+    )
+    audit_table = models.ForeignKey(
+        AuditTable, on_delete=models.CASCADE, related_name="invoice_audits"
+    )
+    old_invoice_no = models.CharField(max_length=50, null=True, blank=True)
+    new_invoice_no = models.CharField(max_length=50)
+    changed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name="invoice_audit_changes"
+    )
+    reason = models.CharField(max_length=200, default="Invoice conversion")
+    change_type = models.CharField(
+        max_length=20,
+        choices=ChangeTypeChoices.choices,
+        default=ChangeTypeChoices.CONVERSION,
+    )
+    old_invoice_type = models.CharField(max_length=20, null=True, blank=True)
+    new_invoice_type = models.CharField(max_length=20)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = InvoiceAuditConstraints.get_all_indexes()
+
+    def __str__(self):
+        return f"{self.invoice.id}: {self.old_invoice_no} → {self.new_invoice_no} ({self.change_type})"
+
+
+class PaymentAllocation(SoftDeleteModel):
+    """
+    The "bridge" model. This links a specific payment to a specific invoice,
+    recording how much of that payment was used to clear that invoice.
+    """
+
+    # Custom manager
+    objects = PaymentAllocationManager()
+
+    payment = models.ForeignKey(
+        Payment, on_delete=models.CASCADE, related_name="allocations"
+    )
+    invoice = models.ForeignKey(
+        Invoice, on_delete=models.CASCADE, related_name="allocations"
+    )
+    amount_allocated = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0")
     )
     created_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
         null=True,
+        related_name="payment_allocation_created_by",
+    )
+    allocated_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # Removed unique_together constraint to allow multiple allocations
+        # from the same payment to the same invoice
+        pass
+
+    def __str__(self):
+        return f"₹{self.amount_allocated} of Payment {self.payment.id} allocated to Invoice {self.invoice.invoice_number}"
+
+
+class ReturnInvoice(models.Model):
+    """
+    Model to store return invoices with comprehensive tracking
+    """
+
+    # Use imported choices
+    RefundType = RefundTypeChoices
+    RefundStatus = RefundStatusChoices
+    RefundReason = RefundReasonChoices
+
+    # Custom manager
+    objects = ReturnInvoiceManager()
+
+    # Core relationships
+    invoice = models.ForeignKey(
+        Invoice,
+        on_delete=models.CASCADE,
+        related_name="return_invoices",
+        help_text="Original invoice being returned",
+    )
+    customer = models.ForeignKey(
+        Customer, on_delete=models.CASCADE, related_name="return_invoices"
+    )
+
+    # Return identification
+    return_number = models.CharField(
+        max_length=50,
+        unique=True,
+        null=True,
         blank=True,
-        related_name="sale_invoice_log",
+        help_text="Auto-generated return invoice number",
+    )
+    sequence_no = models.PositiveIntegerField(null=True, blank=True)
+
+    # Return details
+    refund_type = models.CharField(
+        max_length=20,
+        choices=RefundTypeChoices.choices,
+        default=RefundTypeChoices.CASH_REFUND,
+        help_text="Type of refund to be processed",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=RefundStatusChoices.choices,
+        default=RefundStatusChoices.PENDING,
+        help_text="Current status of the return",
+    )
+    reason = models.CharField(
+        max_length=20,
+        choices=RefundReasonChoices.choices,
+        default=RefundReasonChoices.CUSTOMER_REQUEST,
+        help_text="Reason for the return",
+    )
+
+    # Financial fields
+    total_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="Total return amount",
+    )
+    refund_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="Actual amount to be refunded",
+    )
+    restocking_fee = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="Fee charged for restocking",
+    )
+
+    # Dates and tracking
+    return_date = models.DateTimeField(
+        default=timezone.now, help_text="Date when return was initiated"
+    )
+    approved_date = models.DateTimeField(
+        null=True, blank=True, help_text="Date when return was approved"
+    )
+    processed_date = models.DateTimeField(
+        null=True, blank=True, help_text="Date when return was processed"
+    )
+    financial_year = models.CharField(max_length=10, null=True, blank=True)
+
+    # Additional information
+    notes = models.TextField(
+        blank=True, null=True, help_text="Additional notes about the return"
+    )
+    internal_notes = models.TextField(
+        blank=True, null=True, help_text="Internal notes for staff only"
+    )
+
+    # Approval workflow
+    approved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="return_invoice_approved_by",
+        help_text="User who approved the return",
+    )
+    processed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="return_invoice_processed_by",
+        help_text="User who processed the return",
+    )
+
+    # Audit fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="return_invoice_created_by",
+    )
+    modified_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="return_invoice_modified_by",
     )
 
     class Meta:
-        ordering = ["-allocated_at"]
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["inventory_log", "product_variant"]),
-            models.Index(fields=["invoice_item"]),
+            models.Index(fields=["customer", "status"]),
+            models.Index(fields=["return_date"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["refund_type"]),
+            models.Index(fields=["financial_year"]),
+            models.Index(fields=["invoice"]),
         ]
-        # Prevent duplicate tracking for same invoice item
-        unique_together = ["invoice_item", "inventory_log"]
-
-    def __str__(self):
-        return f"{self.quantity_allocated} sold from {self.inventory_log.supplier_invoice.invoice_number}"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(refund_amount__lte=models.F("total_amount")),
+                name="refund_amount_check",
+            ),
+            models.CheckConstraint(
+                check=models.Q(
+                    models.Q(status="COMPLETED") | models.Q(processed_date__isnull=True)
+                ),
+                name="processed_date_check",
+            ),
+        ]
 
     def save(self, *args, **kwargs):
-        # Cache purchase date for FIFO ordering
-        if not self.purchase_date:
-            self.purchase_date = self.inventory_log.timestamp
-            
-        # Cache purchase price
-        if not self.purchase_price_per_unit:
-            self.purchase_price_per_unit = self.inventory_log.purchase_price or Decimal('0')
-            
+        # Auto-generate financial year
+        if not self.financial_year and self.return_date:
+            self.financial_year = get_financial_year(self.return_date)
+
+        # Auto-generate return number
+        if not self.return_number:
+            self.sequence_no, self.return_number = self._get_next_return_number()
+
         super().save(*args, **kwargs)
+
+    def _get_next_return_number(self):
+        """Generate next return number"""
+        # Simple implementation - you might want to make this more sophisticated
+        last_return = (
+            ReturnInvoice.objects.filter(financial_year=self.financial_year)
+            .order_by("-sequence_no")
+            .first()
+        )
+
+        next_seq = (last_return.sequence_no + 1) if last_return else 1
+        return_number = f"RET/{self.financial_year}/{str(next_seq).zfill(3)}"
+
+        return next_seq, return_number
+
+    @property
+    def is_approved(self):
+        """Check if return is approved"""
+        return self.status in [
+            RefundStatusChoices.APPROVED,
+            RefundStatusChoices.PROCESSING,
+            RefundStatusChoices.COMPLETED,
+        ]
+
+    @property
+    def is_completed(self):
+        """Check if return is completed"""
+        return self.status == RefundStatusChoices.COMPLETED
+
+    @property
+    def can_be_processed(self):
+        """Check if return can be processed"""
+        return self.status == RefundStatusChoices.APPROVED
+
+    def approve(self, user):
+        """Approve the return"""
+        if self.status != RefundStatusChoices.PENDING:
+            raise ValidationError("Only pending returns can be approved")
+
+        self.status = RefundStatusChoices.APPROVED
+        self.approved_by = user
+        self.approved_date = timezone.now()
+        self.save()
+
+    def process(self, user):
+        """Process the return"""
+        if not self.can_be_processed:
+            raise ValidationError("Return must be approved before processing")
+
+        self.status = RefundStatusChoices.COMPLETED
+        self.processed_by = user
+        self.processed_date = timezone.now()
+        self.save()
+
+    def get_absolute_url(self):
+        if self.status == RefundStatusChoices.PENDING:
+            return reverse("invoice:return_stock_adjustment", kwargs={"pk": self.pk})
+
+        elif self.status == RefundStatusChoices.APPROVED:
+            return reverse("invoice:return_detail", kwargs={"pk": self.pk})
+
+        return None
+
+    def __str__(self):
+        return f"Return {self.return_number or self.pk} for {self.customer.name}"
+
+
+class ReturnInvoiceItem(models.Model):
+    """
+    Model to store return invoice items with detailed tracking
+    """
+
+    # Custom manager
+    objects = ReturnInvoiceItemManager()
+
+    return_invoice = models.ForeignKey(
+        ReturnInvoice, on_delete=models.CASCADE, related_name="return_invoice_items"
+    )
+    product_variant = models.ForeignKey(
+        ProductVariant, on_delete=models.PROTECT, related_name="return_invoice_items"
+    )
+
+    # Reference to original invoice item (if available)
+    original_invoice_item = models.ForeignKey(
+        InvoiceItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="return_items",
+        help_text="Original invoice item being returned",
+    )
+
+    # Return quantities
+    quantity_returned = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0"))],  # Allow 0 initially
+        help_text="Quantity being returned",
+    )
+    quantity_original = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="Original quantity from invoice",
+    )
+
+    # Pricing information
+    unit_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="Unit price at time of return",
+    )
+    total_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="Total amount for this item",
+    )
+
+    # Condition and reason
+    condition = models.CharField(
+        max_length=20,
+        choices=ItemConditionChoices.choices,
+        default=ItemConditionChoices.NEW,
+        help_text="Condition of returned item",
+    )
+    return_reason = models.CharField(
+        max_length=50,
+        choices=ItemReturnReasonChoices.choices,
+        default=ItemReturnReasonChoices.CUSTOMER_REQUEST,
+        help_text="Reason for returning this specific item",
+    )
+
+    # Additional information
+    notes = models.TextField(
+        blank=True, null=True, help_text="Notes about this return item"
+    )
+
+    # Audit fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["return_invoice", "product_variant"]),
+            models.Index(fields=["product_variant"]),
+            models.Index(fields=["condition"]),
+            models.Index(fields=["return_reason"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(quantity_returned__lte=models.F("quantity_original")),
+                name="return_quantity_check",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        # Auto-calculate total amount
+        if self.quantity_returned and self.unit_price:
+            self.total_amount = self.quantity_returned * self.unit_price
+
+        # Set original quantity from invoice item if available
+        if self.original_invoice_item and not self.quantity_original:
+            self.quantity_original = self.original_invoice_item.quantity
+            self.unit_price = self.original_invoice_item.unit_price
+
+        super().save(*args, **kwargs)
+
+    @property
+    def is_full_return(self):
+        """Check if this is a full return of the original item"""
+        return self.quantity_returned == self.quantity_original
+
+    @property
+    def is_partial_return(self):
+        """Check if this is a partial return"""
+        return self.quantity_returned < self.quantity_original
+
+    @property
+    def remaining_quantity(self):
+        """Get remaining quantity that can still be returned"""
+        return self.quantity_original - self.quantity_returned
+
+    def clean(self):
+        """Validate return item data"""
+        if self.quantity_returned > self.quantity_original:
+            raise ValidationError("Return quantity cannot exceed original quantity")
+
+        # Allow 0 initially - users will select items to return
+        # Only validate positive quantity when actually returning items
+        if self.quantity_returned < 0:
+            raise ValidationError("Return quantity cannot be negative")
+
+    def __str__(self):
+        return f"Return {self.quantity_returned} × {self.product_variant.product.name} for {self.return_invoice}"

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}
+    {{ page_title|default:"Report Configuration" }}
+{% endblock title %}
+
+{% block content %}
+    <div class="page-header">
+        <h2 class="page-title">{{ page_title|default:"Report Configuration" }}</h2>
+        <div class="page-actions">
+            <a href="{% url 'setting:report_config_list' %}" class="btn">
+                <i class="fas fa-arrow-left"></i>
+                Back
+            </a>
+        </div>
+    </div>
+
+    <div class="form-card">
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit" class="btn btn-primary">{{ form_action|default:"Save" }}</button>
+        </form>
+    </div>
+{% endblock %}
+
+

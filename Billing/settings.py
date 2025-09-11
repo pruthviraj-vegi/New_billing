@@ -30,6 +30,11 @@ ALLOWED_HOSTS = ["*"]
 
 LOGIN_URL = "/login/"
 
+# Session/inactivity settings (3 hours)
+INACTIVITY_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours
+SESSION_COOKIE_AGE = 3 * 60 * 60  # 3 hours sliding expiry with save-every-request
+SESSION_SAVE_EVERY_REQUEST = True
+
 
 # Application definition
 
@@ -41,13 +46,15 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
-    "user",
     "base",
-    "customer",
+    "user",
     "supplier",
+    "setting",
+    "customer",
     "inventory",
     "cart",
     "invoice",
+    "report",
 ]
 
 MIDDLEWARE = [
@@ -56,6 +63,8 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "base.middleware.InactivityLogoutMiddleware",
+    "base.middleware.SessionMetaMiddleware",
     "base.middleware.CustomLoginRequiredMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -100,8 +109,8 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": "billing",
-        "USER": "postgres",
-        "PASSWORD": "10@Postgresql#05",
+        "USER": "billing_user",
+        "PASSWORD": "10@Postgres.local",
         "HOST": "127.0.0.1",
         "PORT": "5432",
     }
@@ -135,7 +144,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-in"
 
-TIME_ZONE = "Asia/Calcutta"
+TIME_ZONE = "Asia/Kolkata"
 
 # USE_I18N = False
 USE_L10N = True

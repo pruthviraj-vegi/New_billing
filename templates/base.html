@@ -25,11 +25,13 @@
     <!-- Select2 -->
     <link rel="stylesheet"
           href="{% static 'assets/plugins/select2/css/select2.min.css' %}" />
+    <link rel="stylesheet" 
+          href="{% static 'assets/plugins/select2/css/selectTheme.css' %}"  />
     <!-- Bootstrap CSS -->
     <link rel="stylesheet"
           href="{% static 'assets/plugins/bootstrap/css/bootstrap.min.css' %}" />
     <!-- Main CSS -->
-    <link rel="stylesheet" href="{% static 'css/main.css' %}" />
+    <link rel="stylesheet" href="{% static 'css/old.css' %}" />
     {% block extra_css %}
     {% endblock extra_css %}
   </head>
@@ -47,14 +49,14 @@
         </a>
       </div>
       <div class="topbar-right">
-        <button class="notification-btn" id="notificationBtn">
+        <button class="top-bar-btn notification-btn" id="notificationBtn">
           <i class="fas fa-bell"></i>
           <span class="notification-badge">3</span>
         </button>
-        <button class="theme-toggle" id="themeToggle">
+        <button class="top-bar-btn theme-toggle" id="themeToggle">
           <i class="fas fa-moon"></i>
         </button>
-        <a href="{% url 'base:logout' %}" class="logout-btn">
+        <a href="{% url 'base:logout' %}" class="top-bar-btn logout-btn">
           <i class="fas fa-sign-out-alt"></i>
           <span class="hidden sm:inline"></span>
         </a>
@@ -72,6 +74,8 @@
     <!-- Bootstrap JavaScript -->
     <script src="{% static 'assets/plugins/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
     <script src="{% static 'assets/plugins/select2/js/select2.min.js' %}"></script>
+    <!-- Popup System -->
+    <script src="{% static 'js/popup.js' %}"></script>
     <!-- Main JavaScript -->
     <script src="{% static 'js/main.js' %}"></script>
     {% block extra_js %}
@@ -80,5 +84,49 @@
     {% if messages %}
       {% for message in messages %}<script>showNotification('{{message}}', '{{message.tags}}')</script>{% endfor %}
     {% endif %}
+
+    {% comment %} <script>
+      // Wait until page load
+      window.addEventListener("load", () => {
+        console.log("=== Page Performance Metrics ===");
+      
+        // 1. Navigation timing (overall page load)
+        const [nav] = performance.getEntriesByType("navigation");
+        console.log("DNS lookup: ", (nav.domainLookupEnd - nav.domainLookupStart).toFixed(2), "ms");
+        console.log("TCP connection: ", (nav.connectEnd - nav.connectStart).toFixed(2), "ms");
+        if (nav.secureConnectionStart > 0) {
+          console.log("TLS handshake: ", (nav.connectEnd - nav.secureConnectionStart).toFixed(2), "ms");
+        }
+        console.log("TTFB (Time to First Byte): ", (nav.responseStart - nav.requestStart).toFixed(2), "ms");
+        console.log("Response time: ", (nav.responseEnd - nav.responseStart).toFixed(2), "ms");
+        console.log("DOM load: ", (nav.domContentLoadedEventEnd - nav.startTime).toFixed(2), "ms");
+        console.log("Full page load: ", (nav.loadEventEnd - nav.startTime).toFixed(2), "ms");
+      
+        // 2. Resource timing (CSS, JS, images, APIs)
+        console.log("\n=== Resource Load Times ===");
+        performance.getEntriesByType("resource").forEach(res => {
+          console.log(
+            `${res.initiatorType.toUpperCase()} → ${res.name} : ${res.duration.toFixed(2)} ms`
+          );
+        });
+      
+        // 3. Example: measure custom API calls
+        function measureApi(url) {
+          performance.mark("api-start");
+          return fetch(url).then(r => r.json()).then(data => {
+            performance.mark("api-end");
+            performance.measure("API Call", "api-start", "api-end");
+            const measure = performance.getEntriesByName("API Call").pop();
+            console.log(`API ${url} took: ${measure.duration.toFixed(2)} ms`);
+            performance.clearMarks();
+            performance.clearMeasures();
+            return data;
+          });
+        }
+      
+        // Test API measurement (remove/replace in production)
+        // measureApi("/api/data");
+      });
+      </script> {% endcomment %}
   </body>
 </html>

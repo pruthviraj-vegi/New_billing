@@ -11,7 +11,8 @@ class CartForm(forms.ModelForm):
                 "class": "form-input",
                 "placeholder": "Enter cart name (e.g., Customer Order #123)",
                 "maxlength": "255",
-                "autofocus": True
+                "autofocus": True,
+                "value": "Walk in"
             }),
             "status": forms.Select(attrs={
                 "class": "form-input"

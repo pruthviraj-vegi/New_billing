@@ -80,7 +80,10 @@
             </div>
             <div class="col-md-4  {% if product_form.name.errors %}has-error{% endif %}">
               <label for="{{ product_form.name.id_for_label }}" class="form-label">{{ product_form.name.label }}</label>
+                
               {{ product_form.name }}
+              
+                
               <small class="form-help">e.g., Cotton T-Shirt, Denim Jeans, Silk Dress</small>
               {% if product_form.name.errors %}
                 <div class="field-errors">
@@ -96,7 +99,12 @@
             <!-- Row 2: Category and Cloth Type -->
             <div class="col-md-4  {% if product_form.category.errors %}has-error{% endif %}">
               <label for="{{ product_form.category.id_for_label }}" class="form-label">{{ product_form.category.label }}</label>
+              <div class="input-group">
               {{ product_form.category }}
+              <button type="button" class="btn btn-outline-primary" onclick="openModelPopup('{% url "inventory:category_create" %}', 'new_category', '{{ form.category.id_for_label }}')" title="Add New Category">
+                <i class="fas fa-plus"></i>
+              </button>
+              </div>
               <small class="form-help">Select the appropriate category for this product</small>
               {% if product_form.category.errors %}
                 <div class="field-errors">
@@ -111,7 +119,12 @@
             </div>
             <div class="col-md-4  {% if product_form.cloth_type.errors %}has-error{% endif %}">
               <label for="{{ product_form.cloth_type.id_for_label }}" class="form-label">{{ product_form.cloth_type.label }}</label>
-              {{ product_form.cloth_type }}
+              <div class="input-group">
+                {{ product_form.cloth_type }}
+              <button type="button" class="btn btn-outline-primary" onclick="openModelPopup('{% url "inventory:cloth_create" %}', 'new_cloth', '{{ form.cloth_type.id_for_label }}')" title="Add New Color">
+                <i class="fas fa-plus"></i>
+              </button>
+              </div>
               <small class="form-help">e.g., Cotton, Silk, Polyester, Denim</small>
               {% if product_form.cloth_type.errors %}
                 <div class="field-errors">
@@ -166,7 +179,12 @@
             <div class="row">
               <div class="col-md-3  {% if variant_form.size.errors %}has-error{% endif %}">
                 <label for="{{ variant_form.size.id_for_label }}" class="form-label">{{ variant_form.size.label }}</label>
-                {{ variant_form.size }}
+                <div class="input-group">
+                    {{ variant_form.size }}
+                  <button type="button" class="btn btn-outline-primary" onclick="openModelPopup('{% url "inventory:size_create" %}', 'new_size', '{{ form.size.id_for_label }}')" title="Add New Size">
+                    <i class="fas fa-plus"></i>
+                  </button>
+                </div>
                 <small class="form-help">e.g., S, M, L, XL, XXL</small>
                 {% if variant_form.size.errors %}
                   <div class="field-errors">
@@ -181,7 +199,12 @@
               </div>
               <div class="col-md-3  {% if variant_form.color.errors %}has-error{% endif %}">
                 <label for="{{ variant_form.color.id_for_label }}" class="form-label">{{ variant_form.color.label }}</label>
+                <div class="input-group">
                 {{ variant_form.color }}
+                <button type="button" class="btn btn-outline-primary" onclick="openModelPopup('{% url "inventory:color_create" %}', 'new_color', '{{ form.color.id_for_label }}')" title="Add New Color">
+                    <i class="fas fa-plus"></i>
+                  </button>
+                  </div>
                 <small class="form-help">e.g., Red, Blue, Black, White</small>
                 {% if variant_form.color.errors %}
                   <div class="field-errors">

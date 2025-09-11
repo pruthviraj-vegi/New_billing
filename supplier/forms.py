@@ -24,32 +24,27 @@ class SupplierForm(forms.ModelForm):
         widgets = {
             "name": forms.TextInput(
                 attrs={
-                    "class": "form-input",
                     "placeholder": "Supplier Name",
                     "autofocus": True,
                 }
             ),
             "contact_person": forms.TextInput(
                 attrs={
-                    "class": "form-input",
                     "placeholder": "Contact Person",
                 }
             ),
             "email": forms.EmailInput(
                 attrs={
-                    "class": "form-input",
                     "placeholder": "Enter Email",
                 }
             ),
             "phone": forms.TextInput(
                 attrs={
-                    "class": "form-input",
                     "placeholder": "Enter Phone",
                 }
             ),
             "gstin": forms.TextInput(
                 attrs={
-                    "class": "form-input",
                     "placeholder": "Enter GSTIN",
                 }
             ),
@@ -61,6 +56,13 @@ class SupplierForm(forms.ModelForm):
                 }
             ),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Adding form-control class to all fields
+        for visible in self.visible_fields():
+            visible.field.widget.attrs["class"] = "form-input"
 
     def clean_phone(self):
         phone = self.cleaned_data.get("phone")

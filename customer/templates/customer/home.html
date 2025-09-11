@@ -7,9 +7,9 @@
 {% block content %}
     <!-- Page Header -->
     <div class="page-header">
-        <h2 class="page-title">Customers Management</h2>
+        <h2 class="heading page-title">Customers Management</h2>
         <div class="page-actions">
-            <a href="{% url 'customer:download' %}" class="btn">
+            <a href="{% url 'customer:download' %}" class="btn btn-download">
                 <i class="fas fa-download"></i>
                 Download
             </a>
@@ -30,112 +30,93 @@
         <form method="get" class="search-filter-form" id="searchForm">
             <div class="search-group search-expanded">
                 <i class="fas fa-search search-icon"></i>
-                <input type="search"
-                       name="search"
-                       class="search-input"
-                       placeholder="Search customers..."
-                       value="{{ search_query }}"
-                       id="searchInput"
-                       autofocus>
+                <div class="search-input-container">
+                    <div class="word-suggestion-container">
+                        <input type="search"
+                               name="search"
+                               class="search-input word-suggestion-input"
+                               placeholder="Search customers by name, phone, email, or address..."
+                               value=""
+                               id="searchInput"
+                               data-url="{% url 'suggestions:customer_all' %}"
+                               autocomplete="off"
+                               autofocus>
+                    </div>
+                    <div class="filter-tags-inline" id="filterTagsInline">
+                        <!-- Filter tags will be dynamically added here -->
+                    </div>
+                </div>
             </div>
             <select name="status" class="filter-select" id="statusFilter">
                 <option value="">All Status</option>
-                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
-                <option value="inactive"
-                        {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
             </select>
-            <select name="sort" class="filter-select" id="sortSelect">
-                <option value="-created_at"
-                        {% if sort_by == '-created_at' %}selected{% endif %}>Newest First</option>
-                <option value="created_at"
-                        {% if sort_by == 'created_at' %}selected{% endif %}>Oldest First</option>
-                <option value="name" {% if sort_by == 'name' %}selected{% endif %}>Name A-Z</option>
-                <option value="-name" {% if sort_by == '-name' %}selected{% endif %}>Name Z-A</option>
-                <option value="phone_number"
-                        {% if sort_by == 'phone_number' %}selected{% endif %}>Phone A-Z</option>
-                <option value="-phone_number"
-                        {% if sort_by == '-phone_number' %}selected{% endif %}>Phone Z-A</option>
-            </select>
+             
             <button type="submit" class="btn btn-primary">
                 <i class="fas fa-search"></i>
                 Search
             </button>
         </form>
     </div>
+    
     <!-- Data Table -->
     <div class="table-container">
-        {% if data %}
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>ID</th>
-                        <th>Name</th>
-                        <th>Address</th>
-                        <th>Phone No</th>
+                    <th class="sortable" data-sort="id">ID</th>
+                    <th class="sortable" data-sort="name">Name</th>
+                    <th class="sortable" data-sort="email">Email</th>
+                    <th class="sortable" data-sort="phone_number">Phone No</th>
+                    <th class="sortable" data-sort="address">Address</th>
                         <th>Status</th>
-                        <th>Created</th>
-                        <th class="text-right">Actions</th>
+                    <th class="sortable" data-sort="created_at">Created</th>
+                    <th>Actions</th>
                     </tr>
-                </thead>
-                <tbody>
-                    {% for customer in data %}
-                        <tr>
-                            <td>{{ customer.id }}</td>
-                            <td>
-                                <div>
-                                    <span class="font-weight-bold">{{ customer.name }}</span>
-                                    {% if customer.email %}<span>{{ customer.email }}</span>{% endif %}
-                                </div>
-                            </td>
-                            <td>{{ customer.short_address }}</td>
-                            <td>{{ customer.phone_number }}</td>
-                            <td>
-                                {% if customer.is_deleted %}
-                                    <span class="badge text-danger">
-                                        <i class="fas fa-times-circle"></i>
-                                        Inactive
-                                    </span>
-                                {% else %}
-                                    <span class="badge text-success">
-                                        <i class="fas fa-check-circle"></i>
-                                        Active
-                                    </span>
-                                {% endif %}
-                            </td>
-                            <td>{{ customer.created_at|date:"M d, Y" }}</td>
-                            <td>
-                                <div class="action-buttons">
-                                    <a href="{% url 'customer:detail' customer.id %}"
-                                       class="btn-action btn-view"
-                                       title="View Details">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                    <a href="{% url 'customer:edit' customer.id %}"
-                                       class="btn-action btn-edit"
-                                       title="Edit Customer">
-                                        <i class="fas fa-edit"></i>
-                                    </a>
-                                    <a href="{% url 'customer:delete' customer.id %}"
-                                       class="btn-action btn-delete"
-                                       title="Delete Customer">
-                                        <i class="fas fa-trash"></i>
-                                    </a>
-                                </div>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
+                    </thead>
+                <tbody id="table_body">
+                    <!-- Empty table body - data will be loaded via AJAX -->
+                    <tr>
+                        <td colspan="8" class="text-center" style="padding: 2rem;">
+                            <div class="loading">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                Loading customers...
+                            </div>
+                            <br><br>
+                            <button type="button" class="btn btn-sm" onclick="window.retryTableLoad()">
+                                <i class="fas fa-refresh"></i>
+                                Retry
+                            </button>
+                        </td>
+                    </tr>
+                    </tbody>
             </table>
-        {% else %}
-            <div class="empty-state">
-                <i class="fas fa-users"></i>
-                <h3>No Customers Found</h3>
-                <p>No customers match your search criteria. Try adjusting your filters or add a new customer.</p>
-                <a href="#" class="btn btn-primary" id="addFirstCustomerBtn">
-                    <i class="fas fa-plus"></i>
-                    Add First Customer
-                </a>
-            </div>
-        {% endif %}
+    </div>
+    
+    <!-- Pagination Wrapper - Outside table for better styling -->
+    <div class="pagination-wrapper" id="pagination_wrapper">
+        <!-- Pagination will be loaded here via AJAX -->
     </div>
 {% endblock content %}
+
+{% block extra_js %}
+
+    <script>
+        urls = {
+            fetch: '{% url "customer:fetch" %}',
+            suggestions: '{% url "suggestions:customer_all" %}',
+        }
+    </script>
+
+    <!-- Load the simple table AJAX -->
+    <script src="{% static 'js/fetchAjax.js' %}"></script>
+    
+    <!-- Load the filter tags manager -->
+    <script src="{% static 'js/filter-tags.js' %}"></script>
+    
+    <!-- Load the word suggestion system -->
+    <script src="{% static 'js/word-suggestion.js' %}"></script>
+
+    
+{% endblock extra_js %}
