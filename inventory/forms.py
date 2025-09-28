@@ -56,15 +56,26 @@ class ProductForm(forms.ModelForm):
                     "class": "form-input",
                     "placeholder": "Select Hsn Code",
                 }
-            )
+            ),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Set initial HSN code - first active one if exists, else None
+        if not self.instance.pk:  # Only for new products (not editing)
+            first_hsn = GSTHsnCode.objects.filter(is_active=True).first()
+            if first_hsn:
+                self.fields["hsn_code"].initial = first_hsn
 
 
 class VariantForm(forms.ModelForm):
     """Form for creating a variant"""
 
     supplier_invoice = forms.ModelChoiceField(
-        queryset=SupplierInvoice.objects.filter(supplier__is_deleted=False).order_by("-created_at"),
+        queryset=SupplierInvoice.objects.filter(supplier__is_deleted=False).order_by(
+            "-created_at"
+        ),
         required=False,
         widget=forms.Select(attrs={"class": "form-input"}),
         help_text="Select the supplier invoice for this variant (optional)",
@@ -78,17 +89,11 @@ class VariantForm(forms.ModelForm):
             "damaged_quantity",
             "status",
             "created_by",
+            "extra_attributes",
         ]
         widgets = {
             "supplier": forms.Select(
                 attrs={"class": "form-input", "placeholder": "Select supplier"}
-            ),
-            "extra_attributes": forms.Textarea(
-                attrs={
-                    "class": "form-input",
-                    "placeholder": "Enter extra attributes",
-                    "rows": 3,
-                }
             ),
             "quantity": forms.NumberInput(
                 attrs={"class": "form-input", "placeholder": "Enter quantity"}
@@ -256,7 +261,15 @@ class UOMForm(forms.ModelForm):
 
     class Meta:
         model = UOM
-        fields = ["name", "short_code", "category", "base_unit", "conversion_factor", "description", "is_active"]
+        fields = [
+            "name",
+            "short_code",
+            "category",
+            "base_unit",
+            "conversion_factor",
+            "description",
+            "is_active",
+        ]
         widgets = {
             "name": forms.TextInput(
                 attrs={
@@ -352,7 +365,7 @@ class StockInForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.variant = kwargs.pop("variant", None)  # Get variant from kwargs
         super().__init__(*args, **kwargs)
-        
+
         # If variant is provided, hide the variant field and set it
         if self.variant:
             self.fields["variant"].widget = forms.HiddenInput()
@@ -363,13 +376,13 @@ class StockInForm(forms.ModelForm):
             self.fields["variant"].queryset = ProductVariant.objects.filter(
                 is_deleted=False
             )
-        
+
         # For stock-in operations, show all active supplier invoices
         # This allows linking to any supplier invoice (same product from different suppliers)
         self.fields["supplier_invoice"].queryset = SupplierInvoice.objects.filter(
             supplier__is_deleted=False
         )
-        
+
         # Make supplier_invoice optional
         self.fields["supplier_invoice"].required = False
         # Make purchase price required for stock in
@@ -381,7 +394,9 @@ class StockInForm(forms.ModelForm):
         purchase_price = cleaned_data.get("purchase_price")
         mrp = cleaned_data.get("mrp")
         supplier_invoice = cleaned_data.get("supplier_invoice")
-        variant = cleaned_data.get("variant") or self.variant  # Use passed variant if available
+        variant = (
+            cleaned_data.get("variant") or self.variant
+        )  # Use passed variant if available
 
         # Validate variant is available
         if not variant:
@@ -405,14 +420,14 @@ class StockInForm(forms.ModelForm):
     def save(self, commit=True):
         """Override save to set variant and transaction_type"""
         instance = super().save(commit=False)
-        
+
         # Set variant if passed from view
         if self.variant and not instance.variant:
             instance.variant = self.variant
-        
+
         # Set transaction type for stock in
         instance.transaction_type = InventoryLog.TransactionTypes.STOCK_IN
-        
+
         if commit:
             instance.save()
         return instance
@@ -453,26 +468,27 @@ class InventoryAdjustmentForm(forms.ModelForm):
             self.fields["variant"].queryset = ProductVariant.objects.filter(
                 is_deleted=False
             )
-        
+
         # Filter supplier invoices based on variant and operation type
         if self.variant:
             # For damage operations, only show supplier invoices that contain this variant
             if self.adjustment_type == "damage":
-                self.fields["supplier_invoice"].queryset = SupplierInvoice.objects.filter(
-                    supplier__is_deleted=False,
-                    inventory_logs__variant=self.variant
-                ).distinct()
+                self.fields["supplier_invoice"].queryset = (
+                    SupplierInvoice.objects.filter(
+                        supplier__is_deleted=False, inventory_logs__variant=self.variant
+                    ).distinct()
+                )
             else:
                 # For other operations, show all active supplier invoices
-                self.fields["supplier_invoice"].queryset = SupplierInvoice.objects.filter(
-                    supplier__is_deleted=False
+                self.fields["supplier_invoice"].queryset = (
+                    SupplierInvoice.objects.filter(supplier__is_deleted=False)
                 )
         else:
             # If no variant provided, show all active supplier invoices
             self.fields["supplier_invoice"].queryset = SupplierInvoice.objects.filter(
                 supplier__is_deleted=False
             )
-        
+
         # Make supplier_invoice optional
         self.fields["supplier_invoice"].required = False
 
@@ -502,7 +518,9 @@ class InventoryAdjustmentForm(forms.ModelForm):
         cleaned_data = super().clean()
         quantity_change = cleaned_data.get("quantity_change")
         supplier_invoice = cleaned_data.get("supplier_invoice")
-        variant = cleaned_data.get("variant") or self.variant  # Use passed variant if available
+        variant = (
+            cleaned_data.get("variant") or self.variant
+        )  # Use passed variant if available
 
         # Validate variant is available (either from form or passed)
         if not variant:
@@ -525,9 +543,11 @@ class InventoryAdjustmentForm(forms.ModelForm):
                     "damage": "Damage quantity must be positive.",
                 }
                 raise forms.ValidationError(
-                    error_messages.get(self.adjustment_type, "Quantity must be positive.")
+                    error_messages.get(
+                        self.adjustment_type, "Quantity must be positive."
+                    )
                 )
-            
+
             # For adjustment_out and damage, check if sufficient stock exists
             if self.adjustment_type in ["adjustment_out", "damage"]:
                 if variant.quantity < quantity_change:
@@ -541,23 +561,22 @@ class InventoryAdjustmentForm(forms.ModelForm):
     def save(self, commit=True):
         """Override save to set transaction_type based on adjustment_type"""
         instance = super().save(commit=False)
-        
+
         # Set variant if passed from view
         if self.variant and not instance.variant:
             instance.variant = self.variant
-        
+
         # Map adjustment_type to transaction_type
         transaction_type_mapping = {
             "adjustment_in": InventoryLog.TransactionTypes.ADJUSTMENT_IN,
             "adjustment_out": InventoryLog.TransactionTypes.ADJUSTMENT_OUT,
             "damage": InventoryLog.TransactionTypes.DAMAGE,
         }
-        
+
         instance.transaction_type = transaction_type_mapping.get(
-            self.adjustment_type, 
-            InventoryLog.TransactionTypes.ADJUSTMENT_IN
+            self.adjustment_type, InventoryLog.TransactionTypes.ADJUSTMENT_IN
         )
-        
+
         if commit:
             instance.save()
         return instance
@@ -590,10 +609,17 @@ class DamageForm(InventoryAdjustmentForm):
 
 class GSTHsnCodeForm(forms.ModelForm):
     """Form for creating and editing GST HSN Code"""
-    
+
     class Meta:
         model = GSTHsnCode
-        fields = ["code", "gst_percentage", "cess_rate", "effective_from", "description", "is_active"]
+        fields = [
+            "code",
+            "gst_percentage",
+            "cess_rate",
+            "effective_from",
+            "description",
+            "is_active",
+        ]
         widgets = {
             "code": forms.TextInput(
                 attrs={

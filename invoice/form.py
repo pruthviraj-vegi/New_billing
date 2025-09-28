@@ -3,6 +3,7 @@ from .models import Invoice, AuditTable, InvoiceAudit, ReturnInvoice
 from django.utils import timezone
 from datetime import timedelta
 from user.models import CustomUser
+from customer.models import Customer
 
 
 class InvoiceForm(forms.ModelForm):
@@ -37,6 +38,7 @@ class InvoiceForm(forms.ModelForm):
                     "step": "0.01",
                     "min": "0",
                     "required": False,
+                    "autofocus": True,
                 }
             ),
             "advance_amount": forms.NumberInput(
@@ -82,6 +84,12 @@ class InvoiceForm(forms.ModelForm):
 
         # Make due_date not required by default (will be handled in clean method)
         self.fields["due_date"].required = False
+
+        # Set initial HSN code - first active one if exists, else None
+        if not self.instance.pk:  # Only for new products (not editing)
+            customer = Customer.objects.first()
+            if customer:
+                self.fields["customer"].initial = customer
 
     def clean(self):
         cleaned_data = super().clean()
