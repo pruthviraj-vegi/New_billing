@@ -10,9 +10,12 @@ from base.utility import get_financial_year, StringProcessor
 from base.manager import SoftDeleteModel
 from django.db import transaction
 from django.urls import reverse
+from django.db.models import Sum
+from inventory.models import GSTHsnCode
 
 # Import organized components
 from .choices import (
+    GstTypeChoices,
     InvoiceTypeChoices,
     PaymentTypeChoices,
     PaymentStatusChoices,
@@ -77,6 +80,7 @@ def get_next_sequence(invoice_type, financial_year):
 
 class Invoice(InvoiceFinancialMixin, InvoiceValidationMixin, models.Model):
     """Main Invoice model with organized structure"""
+    GstType = GstTypeChoices
 
     # Use imported choices
     Invoice_type = InvoiceTypeChoices
@@ -164,6 +168,7 @@ class Invoice(InvoiceFinancialMixin, InvoiceValidationMixin, models.Model):
         blank=True,
         related_name="modified_invoices",
     )
+    gst_type = models.CharField(max_length=20, choices=GstTypeChoices.choices, default=GstTypeChoices.CGST_SGST)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -204,12 +209,7 @@ class Invoice(InvoiceFinancialMixin, InvoiceValidationMixin, models.Model):
 
         super().save(*args, **kwargs)
 
-    @classmethod
-    def _get_next_sequence(cls, invoice_type, financial_year):
-        """Internal method to get next sequence number"""
-        return get_next_sequence(invoice_type, financial_year)
-
-
+    
 class InvoiceItem(InvoiceItemFinancialMixin, InvoiceItemValidationMixin, models.Model):
     """Invoice line items with organized structure"""
 
@@ -251,6 +251,10 @@ class InvoiceItem(InvoiceItemFinancialMixin, InvoiceItemValidationMixin, models.
         validators=[MinValueValidator(Decimal("0"))],
         help_text="Cost price per unit (for profit calculation)",
     )
+    hsn_code = models.ForeignKey(GSTHsnCode, on_delete=models.PROTECT, related_name="invoice_items", null=True, blank=True)
+    cess_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal("0"))], help_text="Cess rate")
+    gst_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("5.00"), validators=[MinValueValidator(Decimal("0"))], help_text="GST percentage")
+
     # Metadata
     notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -274,12 +278,6 @@ class InvoiceItem(InvoiceItemFinancialMixin, InvoiceItemValidationMixin, models.
         except Exception:
             return f"#{self.invoice_id} - {self.quantity} × Product #{self.product_variant_id}"
 
-    # def calculate_totals(self):
-    #     """Calculate and update cached total fields"""
-    #     self.line_total = self.gross_amount
-    #     self.tax_amount = self.calculated_tax_amount
-
-    # Manager methods for better queries
     @classmethod
     def get_invoice_items_with_details(cls, invoice_id):
         """Optimized query to get invoice items with related data"""
@@ -298,6 +296,38 @@ class InvoiceItem(InvoiceItemFinancialMixin, InvoiceItemValidationMixin, models.
         self._cached_product_name = self.product_variant.product.name
         self._cached_variant_name = self.product_variant.name
         return self
+
+    def save(self, *args, **kwargs):
+        if not self.hsn_code:
+            self.hsn_code = self.product_variant.product.hsn_code
+
+        if not self.gst_percentage:
+            self.gst_percentage = self.hsn_code.gst_percentage
+
+        if not self.cess_rate:
+            self.cess_rate = self.hsn_code.cess_rate
+
+        super().save(*args, **kwargs)
+
+    @property
+    def get_return_available_quantity(self):
+        """Check if return is available for the invoice item"""
+        # Calculate total quantity already returned (regardless of status)
+        # This prevents over-returning even with multiple pending returns
+        total_returned = self.return_items.filter(
+            return_invoice__invoice=self.invoice,
+            quantity_returned__gt=0,  # Only count items that are actually being returned
+        ).aggregate(total_quantity=Sum("quantity_returned"))[
+            "total_quantity"
+        ] or Decimal(
+            "0"
+        )
+
+        # Available quantity = Original quantity - Total returned quantity
+        available = self.quantity - total_returned
+
+        # Ensure we don't return negative values
+        return max(available, Decimal("0"))
 
     def clean(self):
         """Custom validation for invoice items using mixin validation"""
@@ -681,7 +711,30 @@ class ReturnInvoice(models.Model):
                 ),
                 name="processed_date_check",
             ),
+            # Prevent multiple pending returns for the same invoice
+            models.UniqueConstraint(
+                fields=["invoice"],
+                condition=models.Q(status="PENDING"),
+                name="unique_pending_return_per_invoice",
+            ),
         ]
+
+    def clean(self):
+        """Custom validation for business rules"""
+        if self.refund_amount > self.total_amount:
+            raise ValidationError("Refund amount cannot exceed total amount")
+
+        # Check for duplicate pending return invoices for the same invoice
+        if self.invoice_id and self.status == RefundStatusChoices.PENDING:
+            existing_pending = ReturnInvoice.objects.filter(
+                invoice=self.invoice, status=RefundStatusChoices.PENDING
+            ).exclude(pk=self.pk)
+
+            if existing_pending.exists():
+                raise ValidationError(
+                    f"A pending return invoice already exists for invoice {self.invoice.invoice_number}. "
+                    "Please complete or cancel the existing return before creating a new one."
+                )
 
     def save(self, *args, **kwargs):
         # Auto-generate financial year
@@ -891,6 +944,36 @@ class ReturnInvoiceItem(models.Model):
         # Only validate positive quantity when actually returning items
         if self.quantity_returned < 0:
             raise ValidationError("Return quantity cannot be negative")
+
+        # Check if we're trying to return more than available from the original invoice item
+        if self.original_invoice_item and self.quantity_returned > 0:
+            available_quantity = (
+                self.original_invoice_item.get_return_available_quantity
+            )
+
+            # For new return items, check against available quantity
+            if not self.pk:  # New item being created
+                if self.quantity_returned > available_quantity:
+                    raise ValidationError(
+                        f"Cannot return {self.quantity_returned} items. "
+                        f"Only {available_quantity} items are available for return from this invoice."
+                    )
+            else:  # Existing item being updated
+                # Get current quantity returned (excluding this item)
+                current_returned = self.original_invoice_item.return_items.exclude(
+                    pk=self.pk
+                ).aggregate(total=Sum("quantity_returned"))["total"] or Decimal("0")
+
+                # Available = Original - Current returned (excluding this item)
+                available_for_this_item = (
+                    self.original_invoice_item.quantity - current_returned
+                )
+
+                if self.quantity_returned > available_for_this_item:
+                    raise ValidationError(
+                        f"Cannot return {self.quantity_returned} items. "
+                        f"Only {available_for_this_item} items are available for return."
+                    )
 
     def __str__(self):
         return f"Return {self.quantity_returned} × {self.product_variant.product.name} for {self.return_invoice}"

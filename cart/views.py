@@ -14,12 +14,15 @@ from .serializers import (
     CartItemUpdateSerializer,
 )
 from inventory.models import ProductVariant
-import json
 from django.views.generic import CreateView, UpdateView
 from django.urls import reverse
-
 # Template view for the main cart page
 from django.views.generic import TemplateView
+import logging, json
+
+logger = logging.getLogger(__name__)
+
+
 
 
 class CartMainPageView(TemplateView):
@@ -60,10 +63,9 @@ def getCartData(request, pk):
 
         carts = Cart.objects.filter(status="OPEN").order_by("-created_at")
         context = {"cart_list": cart_list, "cart": cart, "carts": carts}
-    except Cart.DoesNotExist:
+    except Cart.DoesNotExist as e:
         # Redirect to main cart page if cart not found
-        from django.shortcuts import redirect
-
+        logger.error(f"Cart not found: {e}")
         return redirect("cart:main_page")
 
     return render(request, template_name, context)
@@ -193,23 +195,27 @@ def scan_barcode(request):
                 status=status.HTTP_200_OK,
             )
 
-        except Cart.DoesNotExist:
+        except Cart.DoesNotExist as e:
+            logger.error(f"Cart not found or not open: {e}")
             return Response(
                 {"status": "error", "message": "Cart not found or not open"},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        except ProductVariant.DoesNotExist:
+        except ProductVariant.DoesNotExist as e:
+            logger.error(f"Product not found or inactive: {e}")
             return Response(
                 {"status": "error", "message": "Product not found or inactive"},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
     except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON data: {e}")
         return Response(
             {"status": "error", "message": "Invalid JSON data"},
             status=status.HTTP_400_BAD_REQUEST,
         )
     except Exception as e:
+        logger.error(f"Server error: {e}")
         return Response(
             {"status": "error", "message": "Server error occurred"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -284,12 +290,14 @@ def manage_cart_item(request, item_id):
                 status=status.HTTP_200_OK,
             )
 
-    except CartItem.DoesNotExist:
+    except CartItem.DoesNotExist as e:
+        logger.error(f"Cart item not found: {e}")
         return Response(
             {"status": "error", "message": "Cart item not found"},
             status=status.HTTP_404_NOT_FOUND,
         )
     except Exception as e:
+        logger.error(f"Server error: {e}")
         return Response(
             {"status": "error", "message": f"Server error: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -310,7 +318,8 @@ def archive_cart(request, cart_id):
             status=status.HTTP_200_OK,
         )
 
-    except Cart.DoesNotExist:
+    except Cart.DoesNotExist as e:
+        logger.error(f"Cart not found: {e}")
         return Response(
             {"status": "error", "message": "Cart not found"},
             status=status.HTTP_404_NOT_FOUND,
@@ -330,7 +339,8 @@ def clear_cart(request, cart_id):
             status=status.HTTP_200_OK,
         )
 
-    except Cart.DoesNotExist:
+    except Cart.DoesNotExist as e:
+        logger.error(f"Cart not found: {e}")
         return Response(
             {"status": "error", "message": "Cart not found"},
             status=status.HTTP_404_NOT_FOUND,

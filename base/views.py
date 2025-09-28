@@ -3,10 +3,9 @@ from django.contrib.auth.views import LoginView
 from django.contrib import messages
 from django.views.generic import TemplateView
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from .forms import CustomLoginForm
 from django.contrib.auth import logout
-from django.shortcuts import redirect
 
 
 class CustomLoginView(LoginView):

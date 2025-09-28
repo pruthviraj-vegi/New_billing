@@ -523,8 +523,8 @@ class InvoiceManager(View):
                 }
             )
 
-        except json.JSONDecodeError:
-
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON data: {e}")
             return JsonResponse({"success": False, "error": "Invalid JSON data"})
         except Exception as e:
             transaction.set_rollback(True)

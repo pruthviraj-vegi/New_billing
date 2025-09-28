@@ -16,7 +16,9 @@ from invoice.views_ import resequence_invoices
 from django.template.loader import render_to_string
 import json
 from django.core.exceptions import ValidationError
+import logging
 
+logger = logging.getLogger(__name__)
 
 # Create your views here.
 
@@ -48,10 +50,17 @@ INVOICES_PER_PAGE = 20
 def invoiceHome(request):
     """Invoice management main page - initial load only."""
     # For initial page load, just render the template with empty data
+
+    financial_years = (
+        Invoice.objects.filter(financial_year__isnull=False)
+        .values_list("financial_year", flat=True)
+        .distinct()
+    )
     context = {
         "payment_status_choices": Invoice.PaymentStatus.choices,
         "payment_type_choices": Invoice.PaymentType.choices,
         "bill_types": Invoice.Invoice_type.choices,
+        "financial_years": financial_years,
     }
     return render(request, "invoice/home.html", context)
 
@@ -172,7 +181,7 @@ class CreateInvoice(View):
                         product_variant=item.product_variant,
                         quantity=item.quantity,
                         unit_price=item.price,
-                        purchase_price=item.product_variant.purchase_price,
+                        purchase_price=item.product_variant.actual_purchased_price,
                         mrp=item.product_variant.mrp,
                     )
                     InventoryService.sale(
@@ -185,10 +194,13 @@ class CreateInvoice(View):
 
                 cart.delete()
                 messages.success(request, "Invoice created successfully")
-                return redirect("invoice:detail", pk=invoice.id)
+                return render(
+                    request, "intermediate_page.html", {"invoice_no": invoice.id}
+                )
 
         else:
             context = {"cart": cart, "form": form, "title": "Create Invoice"}
+            logger.error(f"Form invalid: {form.errors}")
             return render(request, self.template_name, context)
 
 
@@ -197,7 +209,59 @@ class InvoiceDetail(View):
 
     def get(self, request, pk):
         invoice = get_object_or_404(Invoice, id=pk)
-        context = {"invoice": invoice, "title": f"Invoice {invoice.invoice_number}"}
+
+        # Get return invoices for this invoice
+        return_invoices = (
+            invoice.return_invoices.select_related(
+                "created_by", "approved_by", "processed_by"
+            )
+            .prefetch_related("return_invoice_items")
+            .order_by("-created_at")
+        )
+
+        # Calculate return summary
+        total_return_amount = sum(ret.refund_amount for ret in return_invoices)
+        total_return_items = sum(
+            len(
+                [
+                    item
+                    for item in ret.return_invoice_items.all()
+                    if item.quantity_returned > 0
+                ]
+            )
+            for ret in return_invoices
+        )
+
+        # Add return item counts to each return invoice for template use
+        for ret in return_invoices:
+            ret.returned_items_count = len(
+                [
+                    item
+                    for item in ret.return_invoice_items.all()
+                    if item.quantity_returned > 0
+                ]
+            )
+
+        # Get return items with details
+        return_items_with_details = []
+        for return_invoice in return_invoices:
+            items = return_invoice.return_invoice_items.filter(
+                quantity_returned__gt=0
+            ).select_related("product_variant__product", "original_invoice_item")
+            return_items_with_details.extend(items)
+
+        # Calculate adjusted invoice total (original amount minus returns)
+        adjusted_invoice_total = invoice.total_payable - total_return_amount
+
+        context = {
+            "invoice": invoice,
+            "title": f"Invoice {invoice.invoice_number}",
+            "return_invoices": return_invoices,
+            "total_return_amount": total_return_amount,
+            "total_return_items": total_return_items,
+            "return_items_with_details": return_items_with_details,
+            "adjusted_invoice_total": adjusted_invoice_total,
+        }
         return render(request, self.template_name, context)
 
 
@@ -232,6 +296,8 @@ class InvoiceEdit(View):
             form.save()
             messages.success(request, "Invoice updated successfully")
             return redirect("invoice:detail", pk=invoice.id)
+
+        logger.error(f"Form invalid: {form.errors}")
 
         context = {
             "invoice": invoice,

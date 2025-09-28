@@ -86,20 +86,107 @@ class Size(models.Model):
         super().save(*args, **kwargs)
 
 
-class HsnCode(models.Model):
-    code = models.CharField(max_length=100, unique=True)
-    gst_percentage = models.DecimalField(max_digits=5, decimal_places=2)
+class UOM(models.Model):
+    """
+    Unit of Measurement Master Table
+    """
+
+    name = models.CharField(
+        max_length=50, help_text="Full name of the UOM, e.g., Piece, Dozen, Meter"
+    )
+    short_code = models.CharField(
+        max_length=10,
+        unique=True,
+        help_text="Abbreviation for the UOM, e.g., pcs, doz, m",
+    )
+    category = models.CharField(
+        max_length=50, help_text="Type of UOM, e.g., Quantity, Weight, Length, Volume"
+    )
+    base_unit = models.BooleanField(
+        default=False, help_text="Marks if this is the base unit for conversions"
+    )
+    conversion_factor = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        default=1.0,
+        help_text="Factor to convert to base unit (e.g., 1 dozen = 12 pcs)",
+    )
+    description = models.TextField(
+        blank=True, null=True, help_text="Optional notes about this UOM"
+    )
+    is_active = models.BooleanField(
+        default=True, help_text="Whether this UOM is active or not"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Unit of Measurement"
+        verbose_name_plural = "Units of Measurement"
+
+    def __str__(self):
+        return f"{self.name} ({self.short_code})"
+
+    def save(self, *args, **kwargs):
+        self.name = StringProcessor(self.name).toTitle()
+        self.description = StringProcessor(self.description).toTitle()
+        self.short_code = StringProcessor(self.short_code).toUppercase()
+        super().save(*args, **kwargs)
+
+
+class GSTHsnCode(models.Model):
+    code = models.CharField(max_length=8, unique=True, db_index=True)
+    gst_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("5.00"),
+        validators=[
+            MinValueValidator(Decimal("0.00")),
+            MaxValueValidator(Decimal("40.00")),
+        ],
+    )
+
+    cess_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[
+            MinValueValidator(Decimal("0.00")),
+            MaxValueValidator(Decimal("25.00")),
+        ],
+    )
+    effective_from = models.DateField(null=True, blank=True)
     description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return self.code
+        return f"{self.code} ({self.gst_percentage}% GST + {self.cess_rate}% Cess)"
 
     def save(self, *args, **kwargs):
         self.code = StringProcessor(self.code).toUppercase()
         self.description = StringProcessor(self.description).toTitle()
         super().save(*args, **kwargs)
+
+    def get_applicable_rate(self, transaction_type="intrastate"):
+        if transaction_type == "interstate":
+            return {
+                "cgst": Decimal("0.00"),
+                "sgst": Decimal("0.00"),
+                "igst": self.gst_percentage,
+                "cess": self.cess_rate,
+                "total": self.gst_percentage + self.cess_rate,
+            }
+        else:
+            half = self.gst_percentage / 2
+            return {
+                "cgst": half,
+                "sgst": half,
+                "igst": Decimal("0.00"),
+                "cess": self.cess_rate,
+                "total": self.gst_percentage + self.cess_rate,
+            }
 
 
 class Product(SoftDeleteModel):
@@ -114,22 +201,28 @@ class Product(SoftDeleteModel):
         blank=True, null=True, help_text="The description of the product"
     )
     category = models.ForeignKey(
-        Category, on_delete=models.PROTECT, related_name="products", null=True, blank=True
+        Category,
+        on_delete=models.PROTECT,
+        related_name="products",
+        null=True,
+        blank=True,
     )
     cloth_type = models.ForeignKey(
-        ClothType, on_delete=models.PROTECT, related_name="products", null=True, blank=True
+        ClothType,
+        on_delete=models.PROTECT,
+        related_name="products",
+        null=True,
+        blank=True,
+    )
+    uom = models.ForeignKey(
+        UOM, on_delete=models.PROTECT, related_name="products", null=True, blank=True
     )
     hsn_code = models.ForeignKey(
-        HsnCode, on_delete=models.PROTECT, related_name="products", null=True, blank=True
-    )
-    gst_percentage = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        default=0,
-        validators=[
-            MinValueValidator(Decimal("0"), "GST percentage cannot be negative"),
-            MaxValueValidator(100, "GST percentage cannot exceed 100%"),
-        ],
+        GSTHsnCode,
+        on_delete=models.PROTECT,
+        related_name="products",
+        null=True,
+        blank=True,
     )
     status = models.CharField(
         max_length=20, choices=ProductStatus.choices, default=ProductStatus.ACTIVE
@@ -147,11 +240,6 @@ class Product(SoftDeleteModel):
             models.Index(fields=["status"]),
             models.Index(fields=["created_at"]),
         ]
-
-    def clean(self):
-
-        if self.gst_percentage < 0 or self.gst_percentage > 100:
-            raise ValidationError("GST percentage must be between 0 and 100")
 
     @transaction.atomic
     def save(self, *args, **kwargs):
@@ -391,6 +479,16 @@ class ProductVariant(SoftDeleteModel):
         return self.get_name(include_barcode=True, include_variants=True)
 
     @property
+    def price_name(self):
+        """Short name without barcode for display purposes"""
+        return self.get_name(include_barcode=False, include_variants=False)
+
+    @property
+    def price_name(self):
+        """Short name without barcode for display purposes"""
+        return self.get_name(include_barcode=False, include_variants=True)
+
+    @property
     def is_low_stock(self):
         return self.quantity <= self.minimum_quantity
 
@@ -451,6 +549,18 @@ class ProductVariant(SoftDeleteModel):
         elif self.quantity <= self.minimum_quantity:
             return "low"
         return "healthy"
+
+    @property
+    def get_gst_percentage(self):
+        """Get GST percentage"""
+        if self.product.hsn_code:
+            return self.product.hsn_code.gst_percentage
+        return Decimal("0")
+
+    @property
+    def actual_purchased_price(self):
+        """Calculate actual purchased price"""
+        return self.purchase_price * (1 + (self.get_gst_percentage / 100))
 
     @property
     def get_amount(self):

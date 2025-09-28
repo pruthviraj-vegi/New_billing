@@ -91,6 +91,16 @@ class ShopDetails(models.Model):
         return ", ".join(address_parts)
 
     @property
+    def address_line_one(self):
+        """Return complete formatted address with country."""
+        return f"{self.first_line}, {self.second_line}"
+
+    @property
+    def address_line_two(self):
+        """Return complete formatted address with country."""
+        return f"{self.city}, {self.state} - {self.pincode}"
+
+    @property
     def short_address(self):
         """Return shortened address for display."""
         return f"{self.city}, {self.state} - {self.pincode}"

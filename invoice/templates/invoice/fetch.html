@@ -16,7 +16,7 @@
                 <div>
                     <span class="font-weight-bold text-primary"><a style="text-decoration: none;" href="{% url 'customer:detail' invoice.customer.id %} " target="_blank">{{ invoice.customer.name|default:"N/A" }}</a></span>
                     <br />
-                    {% if invoice.customer.phone_number %}<small class="text-muted">{{ invoice.customer.phone_number }}</small>{% endif %}
+                    {% if invoice.customer.phone_number %}<small class="text-muted">{{ invoice.customer.phone_number|phone_number }}</small>{% endif %}
                 </div>
             </td>
             <td>

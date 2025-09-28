@@ -11,6 +11,10 @@ from decimal import Decimal
 from django.core.paginator import Paginator
 from django.template.loader import render_to_string
 from django.http import JsonResponse
+from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 VALID_SORT_FIELDS = {
     "id",
@@ -25,9 +29,17 @@ VALID_SORT_FIELDS = {
     "-phone_number",
     "address",
     "-address",
+    "credit_amount",
+    "-credit_amount",
+    "debit_amount",
+    "-debit_amount",
+    "balance_amount",
+    "-balance_amount",
+    "last_date",
+    "-last_date",
 }
 
-CUSTOMERS_PER_PAGE = 11
+CUSTOMERS_PER_PAGE = 20
 
 def home(request):
     """Credit management main page - initial load only."""
@@ -61,10 +73,36 @@ def fetch_credits(request):
     # Apply sorting
     if sort_by not in VALID_SORT_FIELDS:
         sort_by = "-created_at"
-    customers = customers.order_by(sort_by)
+    
+    # Handle sorting for model properties that can't be sorted in database
+    if sort_by in ["credit_amount", "-credit_amount", "debit_amount", "-debit_amount", "balance_amount", "-balance_amount", "last_date", "-last_date"]:
+        # Convert to list to enable Python sorting
+        customers_list = list(customers)
+        
+        # Define sorting key based on the field
+        if sort_by in ["credit_amount", "-credit_amount"]:
+            key_func = lambda c: c.credit_amount
+        elif sort_by in ["debit_amount", "-debit_amount"]:
+            key_func = lambda c: c.debit_amount
+        elif sort_by in ["balance_amount", "-balance_amount"]:
+            key_func = lambda c: c.balance_amount
+        elif sort_by in ["last_date", "-last_date"]:
+            # Handle None values by putting them at the end
+            # For ascending: None values go to end (use max date)
+            # For descending: None values go to end (use min date)
+            key_func = lambda c: c.last_date or (datetime.min if sort_by.startswith("-") else datetime.max)
+        
+        # Sort with reverse for descending
+        reverse = sort_by.startswith("-")
+        customers_list.sort(key=key_func, reverse=reverse)
+        
+        # Convert back to queryset-like object for pagination
+        customers = customers_list
+    else:
+        # Regular database sorting for other fields
+        customers = customers.order_by(sort_by)
 
     # Add overdue flag for customers with last activity more than 6 months ago
-    from datetime import datetime, timedelta
     six_months_ago = datetime.now() - timedelta(days=180)
     
     for customer in customers:
@@ -74,9 +112,66 @@ def fetch_credits(request):
             customer.is_overdue = False
 
     # Pagination
-    paginator = Paginator(customers, CUSTOMERS_PER_PAGE)
-    page_number = request.GET.get("page")
-    page_obj = paginator.get_page(page_number)
+    if isinstance(customers, list):
+        # Manual pagination for sorted lists
+        page_number = int(request.GET.get("page", 1))
+        start_index = (page_number - 1) * CUSTOMERS_PER_PAGE
+        end_index = start_index + CUSTOMERS_PER_PAGE
+        
+        # Create a mock page object for template compatibility
+        class MockPage:
+            def __init__(self, object_list, page_number, paginator):
+                self.object_list = object_list
+                self.number = page_number
+                self.paginator = paginator
+            
+            def __iter__(self):
+                return iter(self.object_list)
+            
+            def __len__(self):
+                return len(self.object_list)
+            
+            @property
+            def start_index(self):
+                return (self.number - 1) * self.paginator.per_page + 1
+            
+            @property
+            def end_index(self):
+                return min(self.start_index + len(self.object_list) - 1, self.paginator.count)
+            
+            @property
+            def has_previous(self):
+                return self.number > 1
+            
+            @property
+            def has_next(self):
+                return self.number < self.paginator.num_pages
+            
+            @property
+            def previous_page_number(self):
+                return self.number - 1 if self.has_previous else None
+            
+            @property
+            def next_page_number(self):
+                return self.number + 1 if self.has_next else None
+                
+        class MockPaginator:
+            def __init__(self, total_count, per_page):
+                self.count = total_count
+                self.per_page = per_page
+                self.num_pages = (total_count + per_page - 1) // per_page if total_count > 0 else 1
+            
+            @property
+            def page_range(self):
+                return range(1, self.num_pages + 1)
+                
+        paginator = MockPaginator(len(customers), CUSTOMERS_PER_PAGE)
+        page_obj = MockPage(customers[start_index:end_index], page_number, paginator)
+    else:
+        # Regular pagination for querysets
+        paginator = Paginator(customers, CUSTOMERS_PER_PAGE)
+        page_number = request.GET.get("page")
+        page_obj = paginator.get_page(page_number)
 
     # Render the HTML template
     context = {
@@ -268,6 +363,8 @@ class PaymentCreateView(CreateView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
 
 
@@ -299,6 +396,8 @@ class PaymentUpdateView(UpdateView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
 
 
@@ -323,6 +422,8 @@ class PaymentDeleteView(DeleteView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
         
 

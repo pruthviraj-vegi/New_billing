@@ -45,37 +45,5 @@
         </div>
     {% endif %}
 {% endblock content %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const createCartBtn = document.getElementById('createCartBtn');
-    
-    createCartBtn.addEventListener('click', function() {
-        const cartName = prompt('Enter cart name (optional):');
-        
-        fetch('{% url "cart:create_cart" %}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            },
-            body: JSON.stringify({
-                name: cartName || ''
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                alert('Cart created successfully!');
-                // Redirect to the new cart
-                window.location.href = `{% url 'cart:getCartData' 0 %}`.replace('0', data.cart.id);
-            } else {
-                alert('Error creating cart: ' + data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error creating cart');
-        });
-    });
-});
-</script>
+
+

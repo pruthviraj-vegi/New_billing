@@ -5,6 +5,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.db.models import Sum, Q
 from django.template.loader import render_to_string
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 import json
 from django.core.paginator import Paginator
 from django.db.models import Q
@@ -18,7 +19,10 @@ from .models import ReturnInvoice, Invoice, InvoiceItem, ReturnInvoiceItem
 from .form import ReturnInvoiceForm
 from .choices import ItemConditionChoices, ItemReturnReasonChoices, RefundStatusChoices
 from customer.models import Customer
+from inventory.services import InventoryService
+import logging
 
+logger = logging.getLogger(__name__)
 
 valid_sort_fields = [
     "return_number",
@@ -166,7 +170,7 @@ class ReturnInvoiceCreateView(CreateView):
                     product_variant=item.product_variant,
                     original_invoice_item=item,
                     quantity_returned=0,  # Start with 0 - user will select items
-                    quantity_original=item.quantity,
+                    quantity_original=item.get_return_available_quantity,
                     unit_price=item.unit_price,
                     total_amount=0,  # Will be calculated when items are selected
                     condition=ItemConditionChoices.NEW,
@@ -270,6 +274,60 @@ class ReturnInvoiceDetailView(DetailView):
 
         return context
 
+@transaction.atomic
+def create_auto_return_invoice(request, invoice_id):
+
+    try:
+
+        invoice = get_object_or_404(Invoice, id=invoice_id)
+
+        invoice_items = InvoiceItem.objects.filter(invoice=invoice)
+
+        if not invoice_items.exists():
+            return JsonResponse(
+                {"success": False, "error": "No items found for this invoice."}
+            )
+
+        return_invoice = ReturnInvoice(
+            invoice=invoice,
+            customer=invoice.customer,
+            created_by=request.user,
+            approved_by=request.user,
+            processed_by=request.user,
+            total_amount=invoice.amount,
+        )
+
+        # Validate the return invoice before saving
+        try:
+            return_invoice.clean()
+        except ValidationError as ve:
+            return JsonResponse({"success": False, "error": str(ve)})
+        
+        return_invoice.save()
+
+        return_items_to_create = []
+        for item in invoice_items:
+            return_item = ReturnInvoiceItem(
+                return_invoice=return_invoice,
+                product_variant=item.product_variant,
+                original_invoice_item=item,
+                quantity_returned=0,
+                quantity_original=item.get_return_available_quantity,
+                unit_price=item.unit_price,
+                total_amount=0,
+                condition=ItemConditionChoices.NEW,
+                return_reason=ItemReturnReasonChoices.CUSTOMER_REQUEST,
+            )
+            return_items_to_create.append(return_item)
+
+        ReturnInvoiceItem.objects.bulk_create(return_items_to_create)
+
+        return redirect(return_invoice.get_absolute_url())
+
+    except Exception as e:
+        logger.error(f"Error creating auto return invoice: {e}")
+        return JsonResponse({"success": False, "error": str(e)})
+
 
 @transaction.atomic
 def update_return_item(request, item_id):
@@ -299,7 +357,8 @@ def update_return_item(request, item_id):
                         "error": "Return quantity cannot exceed original quantity",
                     }
                 )
-        except ValueError:
+        except ValueError as e:
+            print("Invalid quantity format", e)
             return JsonResponse({"success": False, "error": "Invalid quantity format"})
 
         # Update item
@@ -339,10 +398,10 @@ def update_return_item(request, item_id):
         )
 
     except ReturnInvoiceItem.DoesNotExist:
-        print(e)
+        logger.error(f"Return item not found: {item_id}")
         return JsonResponse({"success": False, "error": "Return item not found"})
     except Exception as e:
-        print(e)
+        logger.error(f"Error updating return item: {e}")
         return JsonResponse({"success": False, "error": str(e)})
 
 
@@ -375,6 +434,15 @@ def submit_return_invoice(request, pk):
         # Check if there are any items to return
         items_to_return = return_items.filter(quantity_returned__gt=0)
 
+        for item in items_to_return:
+            InventoryService.return_sale(
+                item.product_variant,
+                item.quantity_returned,
+                request.user,
+                item.original_invoice_item,
+                notes=f"Return invoice {item.return_invoice.return_number} - {item.product_variant.product.name}",
+            )
+
         if not items_to_return.exists():
             return JsonResponse(
                 {
@@ -396,11 +464,6 @@ def submit_return_invoice(request, pk):
         return_invoice.processed_at = timezone.now()
         return_invoice.save()
 
-        # Log the submission
-        print(f"Return invoice {return_invoice.return_number} submitted successfully")
-        print(f"Total return amount: {total_return_amount}")
-        print(f"Items to return: {items_to_return.count()}")
-
         return JsonResponse(
             {
                 "success": True,
@@ -416,5 +479,5 @@ def submit_return_invoice(request, pk):
     except ReturnInvoice.DoesNotExist:
         return JsonResponse({"success": False, "error": "Return invoice not found"})
     except Exception as e:
-        print(f"Error submitting return invoice: {e}")
+        logger.error(f"Error submitting return invoice: {e}")
         return JsonResponse({"success": False, "error": str(e)})

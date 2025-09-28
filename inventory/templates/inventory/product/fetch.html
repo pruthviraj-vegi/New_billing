@@ -28,7 +28,7 @@
             <td>
                 <span class="badge badge-info">{{ product.product_variants.count }}</span>
             </td>
-            <td>{{ product.gst_percentage }}%</td>
+            <td>{{ product.hsn_code.gst_percentage }}%</td>
             <td>
                 {% if product.status == 'ACTIVE' %}
                     <span class="badge badge-success">

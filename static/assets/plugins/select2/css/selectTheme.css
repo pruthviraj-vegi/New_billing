@@ -1,7 +1,7 @@
 /* Select2 Theme Integration */
-.select2-container {
+/* .select2-container {
     width: 100% !important;
-}
+} */
 
 .select2-container--default .select2-selection--single {
     height: 2.5rem;
@@ -51,9 +51,9 @@
 }
 
 .select2-container--default .select2-selection--single .select2-selection__clear {
+    position: relative;
     color: var(--text-secondary);
-    right: 1.5rem;
-    top: 0.2rem;
+    right: 0.5rem;
     font-size: 1.2rem;
     line-height: 2.1rem;
 }

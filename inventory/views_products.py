@@ -8,7 +8,10 @@ from django.views.generic import CreateView, UpdateView
 from django.core.paginator import Paginator
 from django.template.loader import render_to_string
 from .models import Product, ProductVariant, InventoryLog
-from .forms import ProductForm
+from .forms import ProductForm, CategoryForm, ClothTypeForm, UOMForm, GSTHsnCodeForm
+import logging
+
+logger = logging.getLogger(__name__)
 
 VALID_SORT_FIELDS = {
     "id",
@@ -21,8 +24,9 @@ VALID_SORT_FIELDS = {
     "-category__name",
     "status",
     "-status",
-    "gst_percentage",
-    "-gst_percentage",
+    "hsn_code__gst_percentage",
+    "-hsn_code__gst_percentage",
+    "-hsn_code",
     "cloth_type",
     "-cloth_type",
     "hsn_code",
@@ -68,6 +72,7 @@ def fetch_products(request):
             | Q(name__icontains=search_query)
             | Q(description__icontains=search_query)
             | Q(category__name__icontains=search_query)
+            | Q(hsn_code__code__icontains=search_query)
         )
 
     # Apply category filter
@@ -194,6 +199,10 @@ class CreateProduct(CreateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context['category_form'] = CategoryForm()
+        context['cloth_type_form'] = ClothTypeForm()
+        context['uom_form'] = UOMForm()
+        context['gst_hsn_form'] = GSTHsnCodeForm()
         context["title"] = self.title
         return context
 
@@ -202,6 +211,7 @@ class CreateProduct(CreateView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
         messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
 
@@ -218,6 +228,10 @@ class EditProduct(UpdateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["title"] = self.title
+        context['category_form'] = CategoryForm()
+        context['cloth_type_form'] = ClothTypeForm()
+        context['uom_form'] = UOMForm()
+        context['gst_hsn_form'] = GSTHsnCodeForm()
         return context
 
     def form_valid(self, form):
@@ -225,6 +239,7 @@ class EditProduct(UpdateView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
         messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
 
@@ -238,7 +253,7 @@ class EditProduct(UpdateView):
 def download_products(request):
     """Download products data as JSON."""
     products = Product.objects.select_related(
-        "category", "cloth_type", "hsn_code"
+        "category", "cloth_type", "hsn_code", "uom"
     ).all()
     data = []
 
@@ -251,7 +266,7 @@ def download_products(request):
                 "category": product.category.name if product.category else None,
                 "cloth_type": product.cloth_type.name if product.cloth_type else None,
                 "hsn_code": product.hsn_code.code if product.hsn_code else None,
-                "gst_percentage": str(product.gst_percentage),
+                "gst_percentage": str(product.hsn_code.gst_percentage),
                 "status": product.status,
                 "variants_count": product.product_variants.count(),
                 "created_at": product.created_at.strftime("%Y-%m-%d %H:%M:%S"),

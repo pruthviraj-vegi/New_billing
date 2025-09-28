@@ -20,7 +20,9 @@ from .forms import (
     SupplierPaymentForm,
     SupplierPaymentAllocationForm,
 )
+import logging
 
+logger = logging.getLogger(__name__)
 
 @login_required
 def dashboard(request):
@@ -422,6 +424,11 @@ class CreateSupplier(LoginRequiredMixin, CreateView):
         messages.success(self.request, "Supplier created successfully!")
         return super().form_valid(form)
 
+    def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
+        return super().form_invalid(form)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["title"] = "Create Supplier"
@@ -445,6 +452,11 @@ class EditSupplier(LoginRequiredMixin, UpdateView):
         messages.success(self.request, "Supplier updated successfully!")
         return super().form_valid(form)
 
+    def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
+        return super().form_invalid(form)
+
 
 class DeleteSupplier(LoginRequiredMixin, DeleteView):
     model = Supplier
@@ -460,6 +472,11 @@ class DeleteSupplier(LoginRequiredMixin, DeleteView):
         supplier = self.get_object()
         messages.success(request, f"Supplier '{supplier.name}' deleted successfully!")
         return super().delete(request, *args, **kwargs)
+
+    def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
+        return super().form_invalid(form)
 
 
 # Payment Views
@@ -491,6 +508,11 @@ class CreatePayment(LoginRequiredMixin, CreateView):
             f"Payment of ₹{form.instance.amount} recorded successfully!",
         )
         return super().form_valid(form)
+
+    def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
+        return super().form_invalid(form)
 
     def dispatch(self, request, *args, **kwargs):
         self.supplier = get_object_or_404(Supplier, id=kwargs["supplier_pk"])
@@ -551,6 +573,7 @@ class EditPayment(LoginRequiredMixin, UpdateView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
         messages.error(
             self.request, "Invalid form submission. Please check your inputs."
         )
@@ -655,6 +678,11 @@ class CreateAllocation(LoginRequiredMixin, CreateView):
         )
         return super().form_valid(form)
 
+    def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
+        return super().form_invalid(form)
+
     def dispatch(self, request, *args, **kwargs):
         self.supplier = get_object_or_404(Supplier, id=kwargs["supplier_pk"])
         self.payment = get_object_or_404(
@@ -744,7 +772,7 @@ class EditAllocation(LoginRequiredMixin, UpdateView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
-        print(form.errors)
+        logger.error(f"Form invalid: {form.errors}")
         messages.error(
             self.request, "Invalid form submission. Please check your inputs."
         )
@@ -838,6 +866,11 @@ class CreateInvoice(LoginRequiredMixin, CreateView):
         )
         return super().form_valid(form)
 
+    def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
+        return super().form_invalid(form)
+
     def dispatch(self, request, *args, **kwargs):
         self.supplier = get_object_or_404(Supplier, id=kwargs["supplier_pk"])
         return super().dispatch(request, *args, **kwargs)
@@ -872,6 +905,11 @@ class EditInvoice(LoginRequiredMixin, UpdateView):
             f"Invoice {form.instance.invoice_number} updated successfully!",
         )
         return super().form_valid(form)
+
+    def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
+        return super().form_invalid(form)
 
     def dispatch(self, request, *args, **kwargs):
         self.supplier = get_object_or_404(Supplier, id=kwargs["supplier_pk"])

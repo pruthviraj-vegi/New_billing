@@ -9,7 +9,9 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 from .models import ShopDetails, ReportConfiguration
 from .forms import ShopDetailsForm, ReportConfigurationForm, QuickReportConfigForm
+import logging
 
+logger = logging.getLogger(__name__)
 
 @login_required
 def shop_details_list(request):
@@ -36,7 +38,7 @@ def shop_details_list(request):
         'search_query': search_query,
         'page_title': 'Shop Details'
     }
-    return render(request, 'base/shop_details_list.html', context)
+    return render(request, 'setting/shop/shop_details_list.html', context)
 
 
 @login_required
@@ -50,6 +52,7 @@ def shop_details_create(request):
             shop.save()
             messages.success(request, 'Shop details created successfully!')
             return redirect('setting:shop_details_list')
+        logger.error(f"Form invalid: {form.errors}")
     else:
         form = ShopDetailsForm()
     
@@ -58,7 +61,7 @@ def shop_details_create(request):
         'page_title': 'Add Shop Details',
         'form_action': 'Create'
     }
-    return render(request, 'base/shop_details_form.html', context)
+    return render(request, 'setting/shop/shop_details_form.html', context)
 
 
 @login_required
@@ -72,6 +75,7 @@ def shop_details_edit(request, pk):
             form.save()
             messages.success(request, 'Shop details updated successfully!')
             return redirect('setting:shop_details_list')
+        logger.error(f"Form invalid: {form.errors}")
     else:
         form = ShopDetailsForm(instance=shop)
     
@@ -81,7 +85,7 @@ def shop_details_edit(request, pk):
         'page_title': 'Edit Shop Details',
         'form_action': 'Update'
     }
-    return render(request, 'base/shop_details_form.html', context)
+    return render(request, 'setting/shop/shop_details_form.html', context)
 
 
 @login_required
@@ -93,7 +97,7 @@ def shop_details_detail(request, pk):
         'shop': shop,
         'page_title': f'Shop Details - {shop.shop_name}'
     }
-    return render(request, 'base/shop_details_detail.html', context)
+    return render(request, 'setting/shop/shop_details_detail.html', context)
 
 
 @login_required
@@ -111,7 +115,7 @@ def shop_details_delete(request, pk):
         'shop': shop,
         'page_title': f'Delete Shop - {shop.shop_name}'
     }
-    return render(request, 'base/shop_details_delete.html', context)
+    return render(request, 'setting/shop/shop_details_delete.html', context)
 
 
 @login_required
@@ -138,7 +142,7 @@ def report_config_list(request):
         'search_query': search_query,
         'page_title': 'Report Configurations'
     }
-    return render(request, 'base/report_config_list.html', context)
+    return render(request, 'setting/reports/report_config_list.html', context)
 
 
 @login_required
@@ -160,7 +164,7 @@ def report_config_create(request):
         'page_title': 'Add Report Configuration',
         'form_action': 'Create'
     }
-    return render(request, 'base/report_config_form.html', context)
+    return render(request, 'setting/reports/report_config_form.html', context)
 
 
 @login_required
@@ -183,7 +187,7 @@ def report_config_edit(request, pk):
         'page_title': 'Edit Report Configuration',
         'form_action': 'Update'
     }
-    return render(request, 'base/report_config_form.html', context)
+    return render(request, 'setting/reports/report_config_form.html', context)
 
 
 @login_required
@@ -195,7 +199,7 @@ def report_config_detail(request, pk):
         'config': config,
         'page_title': f'Report Configuration - {config.get_report_type_display()}'
     }
-    return render(request, 'base/report_config_detail.html', context)
+    return render(request, 'setting/reports/report_config_detail.html', context)
 
 
 @login_required
@@ -213,7 +217,7 @@ def report_config_delete(request, pk):
         'config': config,
         'page_title': f'Delete Configuration - {config.get_report_type_display()}'
     }
-    return render(request, 'base/report_config_delete.html', context)
+    return render(request, 'setting/reports/report_config_delete.html', context)
 
 
 @login_required
@@ -274,7 +278,7 @@ def quick_report_settings(request):
         'form': form,
         'page_title': 'Quick Report Settings'
     }
-    return render(request, 'base/quick_report_settings.html', context)
+    return render(request, 'setting/reports/quick_report_settings.html', context)
 
 
 @login_required
@@ -296,7 +300,8 @@ def shop_settings_dashboard(request):
                 is_default=True,
                 is_active=True
             )
-        except ReportConfiguration.DoesNotExist:
+        except ReportConfiguration.DoesNotExist as e:
+            logger.error(f"Report configuration not found: {e}")
             default_configs[report_type] = None
     
     context = {
@@ -306,4 +311,4 @@ def shop_settings_dashboard(request):
         'default_configs': default_configs,
         'page_title': 'Shop & Report Settings'
     }
-    return render(request, 'base/shop_settings_dashboard.html', context)
+    return render(request, 'setting/shop/shop_settings_dashboard.html', context)

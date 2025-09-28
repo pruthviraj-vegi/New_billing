@@ -2,6 +2,9 @@ from django.db import transaction
 from .models import InventoryLog
 from decimal import Decimal
 from django.db.models import F
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class InventoryService:
@@ -166,7 +169,7 @@ class InventoryService:
                 return inventory_log
 
         except Exception as e:
-            print(e)
+            logger.error(f"Error updating stock in log: {e}")
             return None
 
     @staticmethod
@@ -176,22 +179,25 @@ class InventoryService:
             if quantity_sold <= 0:
                 raise ValueError("Sale quantity must be positive")
 
-            new_quantity = variant.quantity - quantity_sold
-            variant.quantity = new_quantity
-            variant.save()
-
             # Use selling price from invoice_item if available, otherwise variant's final_price
-            unit_price = (invoice_item.unit_price if invoice_item else variant.final_price)
-            
-            # Perform FIFO allocation
+            unit_price = (
+                invoice_item.unit_price if invoice_item else variant.final_price
+            )
+
+            # Perform FIFO allocation FIRST
             allocation_result = InventoryService._allocate_fifo(
                 variant=variant,
                 quantity_to_allocate=quantity_sold,
                 invoice_item=invoice_item,
                 unit_price=unit_price,
                 user=user,
-                notes=notes
+                notes=notes,
             )
+
+            # Update variant quantity AFTER FIFO allocation
+            new_quantity = variant.quantity - quantity_sold
+            variant.quantity = new_quantity
+            variant.save()
 
             return {
                 "success": True,
@@ -199,9 +205,12 @@ class InventoryService:
                 "remaining_stock": new_quantity,
                 "total_amount": quantity_sold * unit_price,
                 "cogs": allocation_result["total_cogs"],
-                "gross_profit": (quantity_sold * unit_price) - allocation_result["total_cogs"],
+                "gross_profit": (quantity_sold * unit_price)
+                - allocation_result["total_cogs"],
                 "allocation_logs": allocation_result["logs"],
-                "insufficient_stock_warning": allocation_result.get("insufficient_stock", False)
+                "insufficient_stock_warning": allocation_result.get(
+                    "insufficient_stock", False
+                ),
             }
 
     @staticmethod
@@ -225,11 +234,13 @@ class InventoryService:
             transaction_type__in=[
                 InventoryLog.TransactionTypes.STOCK_IN,
                 InventoryLog.TransactionTypes.INITIAL,
+                InventoryLog.TransactionTypes.RETURN,
             ],
             remaining_quantity__gt=0,
         ).order_by("timestamp")
 
         # Allocate from available stock logs
+        current_variant_quantity = variant.quantity
         for stock_log in available_logs:
             if remaining_to_allocate <= 0:
                 break
@@ -237,19 +248,22 @@ class InventoryService:
             # Calculate allocation from this log
             allocatable = min(stock_log.remaining_quantity, remaining_to_allocate)
 
+            # Calculate new_quantity after this specific allocation
+            new_quantity_after_allocation = current_variant_quantity - allocatable
+
             # Create sale log entry
             sale_log = InventoryLog.objects.create(
                 variant=variant,
                 transaction_type=InventoryLog.TransactionTypes.SALE,
                 quantity_change=-allocatable,  # Negative for stock out
-                new_quantity=variant.quantity,  # This will be the same for all allocations in this sale
+                new_quantity=new_quantity_after_allocation,  # Correct quantity after this allocation
                 invoice_item=invoice_item,
                 selling_price=unit_price,
                 source_inventory_log=stock_log,
                 allocated_quantity=allocatable,
                 purchase_price=stock_log.purchase_price,
                 total_value=allocatable * unit_price if unit_price else None,
-                supplier_invoice = stock_log.supplier_invoice,
+                supplier_invoice=stock_log.supplier_invoice,
                 created_by=user,
                 notes=notes
                 or f"FIFO Sale: {allocatable} from {stock_log.timestamp.date()}",
@@ -266,20 +280,19 @@ class InventoryService:
 
             allocation_logs.append(sale_log)
             remaining_to_allocate -= allocatable
+            current_variant_quantity -= allocatable  # Update for next iteration
 
         # Handle insufficient stock (negative inventory)
         if remaining_to_allocate > 0:
             insufficient_stock = True
-            # logger.warning(
-            #     f"Insufficient stock for {variant}: {remaining_to_allocate} units short"
-            # )
 
             # Create sale log for the unallocated quantity
             sale_log = InventoryLog.objects.create(
                 variant=variant,
                 transaction_type=InventoryLog.TransactionTypes.SALE,
                 quantity_change=-remaining_to_allocate,
-                new_quantity=variant.quantity,
+                new_quantity=current_variant_quantity
+                - remaining_to_allocate,  # Correct final quantity
                 invoice_item=invoice_item,
                 selling_price=unit_price,
                 total_value=remaining_to_allocate * unit_price if unit_price else None,
@@ -299,7 +312,13 @@ class InventoryService:
         }
 
     @staticmethod
-    def return_sale(variant, quantity_returned, user=None, notes="", invoice=None):
+    def return_sale(
+        variant,
+        quantity_returned,
+        user=None,
+        invoice_item=None,
+        notes="",
+    ):
         """Process a customer return and restore inventory"""
         with transaction.atomic():
             if quantity_returned <= 0:
@@ -309,14 +328,31 @@ class InventoryService:
             variant.quantity = new_quantity
             variant.save()
 
+            inventory_log = InventoryLog.objects.filter(
+                variant=variant,
+                transaction_type=InventoryLog.TransactionTypes.SALE,
+                quantity_change__lt=quantity_returned,
+                invoice_item=invoice_item,
+            ).first()
+
+            supplier_invoice = None
+            if inventory_log:
+                supplier_invoice = inventory_log.supplier_invoice
+
             InventoryLog.objects.create(
                 variant=variant,
-                created_by=user,
-                quantity_change=quantity_returned,  # Positive for returns
-                new_quantity=new_quantity,
                 transaction_type=InventoryLog.TransactionTypes.RETURN,
+                quantity_change=quantity_returned,  # Positive for returns
+                invoice_item=invoice_item,
+                remaining_quantity=quantity_returned,
+                created_by=user,
+                new_quantity=new_quantity,
+                supplier_invoice=supplier_invoice,
+                selling_price=invoice_item.unit_price,
+                total_value=quantity_returned * invoice_item.unit_price,
+                purchase_price=variant.purchase_price,
                 notes=notes
-                or f"Customer return: {quantity_returned} units{f' for {invoice.invoice_number}' if invoice else ''}",
+                or f"Customer return: {quantity_returned} units{f' for {invoice_item}' if invoice_item else ''}",
             )
 
             return {
@@ -327,8 +363,8 @@ class InventoryService:
             }
 
     @staticmethod
-    def mark_as_damaged(
-        variant, quantity_damaged, user=None, notes="", damage_type="General"
+    def damage_log(
+        variant, quantity_damaged, user=None, notes="", damage_type="General", supplier_invoice=None
     ):
         """Mark items as damaged and move them to damaged inventory"""
         with transaction.atomic():
@@ -348,6 +384,7 @@ class InventoryService:
                 new_quantity=variant.quantity,
                 total_value=quantity_damaged * variant.purchase_price,
                 transaction_type=InventoryLog.TransactionTypes.DAMAGE,
+                supplier_invoice=supplier_invoice,
                 notes=notes
                 or f"Marked as damaged: {quantity_damaged} units - {damage_type}. {notes}",
             )
@@ -358,73 +395,4 @@ class InventoryService:
                 "remaining_available": variant.quantity,
                 "total_damaged": variant.damaged_quantity,
                 "damage_type": damage_type,
-            }
-
-    @staticmethod
-    def repair_damaged(variant, quantity_repaired, user=None, notes=""):
-        """Repair damaged items and move them back to available inventory"""
-        with transaction.atomic():
-            if quantity_repaired <= 0:
-                raise ValueError("Repair quantity must be positive")
-
-            if variant.damaged_quantity < quantity_repaired:
-                raise ValueError(
-                    f"Insufficient damaged stock to repair. Damaged: {variant.damaged_quantity}, Requested: {quantity_repaired}"
-                )
-
-            # Move from damaged to available
-            variant.damaged_quantity -= quantity_repaired
-            variant.quantity += quantity_repaired
-            variant.save()
-
-            # Create inventory log
-            InventoryLog.objects.create(
-                variant=variant,
-                created_by=user,
-                quantity_change=quantity_repaired,  # Positive for available stock
-                new_quantity=variant.quantity,
-                transaction_type=InventoryLog.TransactionTypes.ADJUSTMENT_IN,
-                notes=f"Repaired damaged items: {quantity_repaired} units. {notes}",
-            )
-
-            return {
-                "success": True,
-                "quantity_repaired": quantity_repaired,
-                "new_available": variant.quantity,
-                "remaining_damaged": variant.damaged_quantity,
-            }
-
-    @staticmethod
-    def dispose_damaged(
-        variant, quantity_disposed, user=None, notes="", disposal_reason="Damaged"
-    ):
-        """Dispose of damaged items (permanently remove from inventory)"""
-        with transaction.atomic():
-            if quantity_disposed <= 0:
-                raise ValueError("Disposal quantity must be positive")
-
-            if variant.damaged_quantity < quantity_disposed:
-                raise ValueError(
-                    f"Insufficient damaged stock to dispose. Damaged: {variant.damaged_quantity}, Requested: {quantity_disposed}"
-                )
-
-            # Remove from damaged inventory
-            variant.damaged_quantity -= quantity_disposed
-            variant.save()
-
-            # Create inventory log
-            InventoryLog.objects.create(
-                variant=variant,
-                created_by=user,
-                quantity_change=0,  # No change to available stock
-                new_quantity=variant.quantity,
-                transaction_type=InventoryLog.TransactionTypes.ADJUSTMENT_OUT,
-                notes=f"Disposed damaged items: {quantity_disposed} units - {disposal_reason}. {notes}",
-            )
-
-            return {
-                "success": True,
-                "quantity_disposed": quantity_disposed,
-                "remaining_damaged": variant.damaged_quantity,
-                "disposal_reason": disposal_reason,
             }

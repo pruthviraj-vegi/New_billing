@@ -170,20 +170,62 @@
     </div>
 
     <script>
-        // Simple popup closing after success
+        // Debug: Log popup state
+        console.log('Popup template loaded');
+        console.log('Is popup:', {{ is_popup|yesno:"true,false" }});
+        console.log('Messages:', {{ messages|length }});
+        
+        // Enhanced popup handling with dynamic select update
         {% if messages %}
             {% for message in messages %}
                 {% if message.tags == 'success' %}
+                    console.log('Success message found:', '{{ message }}');
+                    
+                    // Show success message
                     alert('{{ message }}');
+                    
+                    // Update parent form select field dynamically
                     setTimeout(function() {
                         if (window.opener) {
-                            window.opener.location.reload();
+                            // Get the new item data from the response
+                            const newItemData = {
+                                id: {{ new_item_id|default:"null" }},
+                                name: "{{ new_item_name|default:"" }}",
+                                fieldType: "{{ field_type|default:"" }}"
+                            };
+                            
+                            console.log('Sending data to parent:', newItemData);
+                            
+                            // Call parent function to update select field
+                            if (window.opener.updateSelectField) {
+                                window.opener.updateSelectField(newItemData);
+                            } else {
+                                console.error('Parent updateSelectField function not found');
+                            }
+                        } else {
+                            console.error('No window.opener found');
                         }
                         window.close();
                     }, 500);
                 {% endif %}
             {% endfor %}
+        {% else %}
+            console.log('No messages found');
         {% endif %}
+        
+        // Handle form submission to prevent default redirect behavior
+        document.querySelector('form').addEventListener('submit', function(e) {
+            console.log('Form submitted');
+            // For popup forms, we handle submission via Django without redirect
+            // No need to prevent default - Django will handle it properly
+        });
+        
+        // Debug logging
+        console.log('Popup loaded with data:', {
+            new_item_id: {{ new_item_id|default:"null" }},
+            new_item_name: "{{ new_item_name|default:"" }}",
+            field_type: "{{ field_type|default:"" }}"
+        });
     </script>
 </body>
 </html>

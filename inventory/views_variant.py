@@ -1,4 +1,3 @@
-from unicodedata import category
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
@@ -18,8 +17,13 @@ from .forms import (
     AdjustmentInForm,
     AdjustmentOutForm,
     DamageForm,
+    SizeForm,
+    ColorForm,
 )
 from .services import InventoryService
+import logging
+
+logger = logging.getLogger(__name__)
 
 VALID_SORT_FIELDS = {
     "id",
@@ -197,9 +201,11 @@ class CreateProductVariant(CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["title"] = self.title
+        context["size_form"] = SizeForm()
+        context["color_form"] = ColorForm()
         product = Product.objects.get(id=self.kwargs["product_id"])
         context["product"] = product
-        context["gst_rate"] = product.gst_percentage
+        context["gst_rate"] = product.hsn_code.gst_percentage
 
         # Check if this is the first variant for this product
         existing_variants = ProductVariant.objects.filter(product=product)
@@ -291,6 +297,7 @@ class CreateProductVariant(CreateView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
         messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
 
@@ -310,7 +317,9 @@ class EditProductVariant(UpdateView):
         context = super().get_context_data(**kwargs)
         context["title"] = self.title
         context["variant"] = self.object
-        context["gst_rate"] = self.object.product.gst_percentage
+        context["sizes_form"] = SizeForm()
+        context["colors_form"] = ColorForm()
+        context["gst_rate"] = self.object.product.hsn_code.gst_percentage
         return context
 
     def form_valid(self, form):
@@ -383,13 +392,24 @@ class StockInCreate(LoginRequiredMixin, CreateView):
 
         return context
 
+    def get_form_kwargs(self):
+        """Pass variant to form constructor"""
+        kwargs = super().get_form_kwargs()
+        variant_id = self.kwargs.get("variant_id")
+        if variant_id:
+            try:
+                variant = ProductVariant.objects.get(id=variant_id, is_deleted=False)
+                kwargs["variant"] = variant
+            except ProductVariant.DoesNotExist:
+                messages.error(self.request, "Selected variant not found.")
+        return kwargs
+
     def get_initial(self):
         initial = super().get_initial()
         variant_id = self.kwargs.get("variant_id")
         if variant_id:
             try:
                 variant = ProductVariant.objects.get(id=variant_id)
-                initial["variant"] = variant
                 initial["purchase_price"] = variant.purchase_price
                 initial["mrp"] = variant.mrp
             except ProductVariant.DoesNotExist:
@@ -478,16 +498,17 @@ class AdjustmentInCreate(LoginRequiredMixin, CreateView):
 
         return context
 
-    def get_initial(self):
-        initial = super().get_initial()
+    def get_form_kwargs(self):
+        """Pass variant to form constructor"""
+        kwargs = super().get_form_kwargs()
         variant_id = self.kwargs.get("variant_id")
         if variant_id:
             try:
                 variant = ProductVariant.objects.get(id=variant_id, is_deleted=False)
-                initial["variant"] = variant
+                kwargs["variant"] = variant
             except ProductVariant.DoesNotExist:
                 messages.error(self.request, "Selected variant not found.")
-        return initial
+        return kwargs
 
     def get_success_url(self):
         variant_id = self.kwargs.get("variant_id")
@@ -528,13 +549,14 @@ class AdjustmentInCreate(LoginRequiredMixin, CreateView):
                 )
                 return redirect(self.get_success_url())
         except Exception as e:
-            print(e)
+            logger.error(f"Error creating adjustment out entry: {str(e)}")
             messages.error(
                 self.request, f"Error creating adjustment in entry: {str(e)}"
             )
             return self.form_invalid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
         messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
 
@@ -560,16 +582,17 @@ class AdjustmentOutCreate(LoginRequiredMixin, CreateView):
 
         return context
 
-    def get_initial(self):
-        initial = super().get_initial()
+    def get_form_kwargs(self):
+        """Pass variant to form constructor"""
+        kwargs = super().get_form_kwargs()
         variant_id = self.kwargs.get("variant_id")
         if variant_id:
             try:
                 variant = ProductVariant.objects.get(id=variant_id, is_deleted=False)
-                initial["variant"] = variant
+                kwargs["variant"] = variant
             except ProductVariant.DoesNotExist:
                 messages.error(self.request, "Selected variant not found.")
-        return initial
+        return kwargs
 
     def get_success_url(self):
         variant_id = self.kwargs.get("variant_id")
@@ -707,21 +730,24 @@ class DamageCreate(LoginRequiredMixin, CreateView):
             try:
                 variant = ProductVariant.objects.get(id=variant_id)
                 context["selected_variant"] = variant
-            except ProductVariant.DoesNotExist:
+            except ProductVariant.DoesNotExist as e:
+                logger.error(f"Selected variant not found: {e}")
                 messages.error(self.request, "Selected variant not found.")
 
         return context
 
-    def get_initial(self):
-        initial = super().get_initial()
+    def get_form_kwargs(self):
+        """Pass variant to form constructor"""
+        kwargs = super().get_form_kwargs()
         variant_id = self.kwargs.get("variant_id")
         if variant_id:
             try:
                 variant = ProductVariant.objects.get(id=variant_id)
-                initial["variant"] = variant
-            except ProductVariant.DoesNotExist:
+                kwargs["variant"] = variant
+            except ProductVariant.DoesNotExist as e:
+                logger.error(f"Selected variant not found: {e}")
                 messages.error(self.request, "Selected variant not found.")
-        return initial
+        return kwargs
 
     def get_success_url(self):
         variant_id = self.kwargs.get("variant_id")
@@ -747,11 +773,12 @@ class DamageCreate(LoginRequiredMixin, CreateView):
                     return redirect("inventory:product_home")
 
                 # Use InventoryService instead of direct method call
-                InventoryService.mark_as_damaged(
+                InventoryService.damage_log(
                     variant,
                     quantity_damaged=form.cleaned_data.get("quantity_change"),
                     user=self.request.user,
                     notes=form.cleaned_data.get("notes"),
+                    supplier_invoice=form.cleaned_data.get("supplier_invoice"),
                 )
 
                 messages.success(
@@ -760,10 +787,11 @@ class DamageCreate(LoginRequiredMixin, CreateView):
                 )
                 return redirect(self.get_success_url())
         except Exception as e:
-            print(e)
+            logger.error(f"Error creating damage entry: {str(e)}")
             messages.error(self.request, f"Error creating damage entry: {str(e)}")
             return self.form_invalid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
         messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)

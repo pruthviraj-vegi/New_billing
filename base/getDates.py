@@ -1,4 +1,7 @@
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # ---------- Helpers ----------
@@ -13,7 +16,8 @@ def end_of_day(dt):
 def parse_date(date_str, fallback=None):
     try:
         return datetime.strptime(date_str, "%d-%m-%Y")
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as e:
+        logger.error(e)
         return fallback
 
 

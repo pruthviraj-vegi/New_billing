@@ -13,6 +13,9 @@ from .forms import CustomerForm
 from django.urls import reverse_lazy
 from django.core.paginator import Paginator
 from django.template.loader import render_to_string
+import logging
+
+logger = logging.getLogger(__name__)
 
 VALID_SORT_FIELDS = {
     "id",
@@ -114,6 +117,14 @@ class CreateCustomer(LoginRequiredMixin, CreateView):
         context["customer"] = None  # For breadcrumb compatibility
         return context
 
+    def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
+        return super().form_invalid(form)
+
+    def get_success_url(self):
+        return reverse_lazy("customer:home")
+
 
 class EditCustomer(LoginRequiredMixin, UpdateView):
     model = Customer
@@ -134,6 +145,7 @@ class EditCustomer(LoginRequiredMixin, UpdateView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
         messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
 
@@ -160,6 +172,7 @@ class DeleteCustomer(LoginRequiredMixin, DeleteView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
         messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
 

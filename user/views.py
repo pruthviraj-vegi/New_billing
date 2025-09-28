@@ -15,6 +15,9 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.views.decorators.http import require_POST
 from .models import LoginEvent
 import csv
+import logging
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -97,6 +100,11 @@ class CreateUser(LoginRequiredMixin, CreateView):
         context["user"] = None  # For breadcrumb compatibility
         return context
 
+    def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
+        return super().form_invalid(form)
+
 
 class EditUser(LoginRequiredMixin, UpdateView):
     model = User
@@ -113,6 +121,11 @@ class EditUser(LoginRequiredMixin, UpdateView):
     def form_valid(self, form):
         messages.success(self.request, "User updated successfully!")
         return super().form_valid(form)
+
+    def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(self.request, "Please correct the errors below.")
+        return super().form_invalid(form)
 
 
 class DeleteUser(LoginRequiredMixin, DeleteView):
@@ -137,6 +150,7 @@ class DeleteUser(LoginRequiredMixin, DeleteView):
         return super().form_valid(form)
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
         messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
 
@@ -157,6 +171,7 @@ def user_delete(request, user_id):
         user.delete()
         messages.success(request, "User deleted successfully!")
         return redirect("user:home")
+
 
     return redirect("user:home")
 

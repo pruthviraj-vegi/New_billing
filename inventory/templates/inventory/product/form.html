@@ -108,12 +108,7 @@
               <!-- Category Field -->
               <div class="form-group {% if form.category.errors %}has-error{% endif %}">
                 <label for="{{ form.category.id_for_label }}" class="form-label">{{ form.category.label }}</label>
-                <div class="input-group">
                 {{ form.category }}
-                <button type="button" class="btn btn-outline-primary" onclick="openModelPopup('{% url "inventory:category_create" %}', 'new_category', '{{ form.category.id_for_label }}')" title="Add New Category">
-                  <i class="fas fa-plus"></i>
-                </button>
-                </div>
                 <small class="form-help">Select the appropriate category for this product</small>
                 {% if form.category.errors %}
                   <div class="field-errors">
@@ -131,12 +126,7 @@
               <!-- Cloth Type Field -->
               <div class="form-group {% if form.cloth_type.errors %}has-error{% endif %}">
                 <label for="{{ form.cloth_type.id_for_label }}" class="form-label">{{ form.cloth_type.label }}</label>
-                <div class="input-group">
                 {{ form.cloth_type }}
-                <button type="button" class="btn btn-outline-primary" onclick="openModelPopup('{% url "inventory:cloth_create" %}', 'new_cloth', '{{ form.cloth_type.id_for_label }}')" title="Add New Color">
-                  <i class="fas fa-plus"></i>
-                </button>
-                </div>
                 <small class="form-help">e.g., Cotton, Silk, Polyester, Denim</small>
                 {% if form.cloth_type.errors %}
                   <div class="field-errors">
@@ -151,8 +141,27 @@
               </div>
             </div>
           </div>
-          <!-- Row 3: HSN Code and GST Percentage -->
+          <!-- Row 3: UOM and GST Percentage -->
           <div class="row">
+            <div class="col-md-6">
+              <!-- UOM Field -->
+              <div class="form-group {% if form.uom.errors %}has-error{% endif %}">
+                <label for="{{ form.uom.id_for_label }}" class="form-label">{{ form.uom.label }}</label>
+                {{ form.uom }}
+                <small class="form-help">e.g., pcs, doz, m</small>
+                {% if form.uom.errors %}
+                  <div class="field-errors">
+                    {% for error in form.uom.errors %}
+                      <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i>
+                        {{ error }}
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          <!-- Row 3: HSN Code and GST Percentage -->
             <div class="col-md-6">
               <!-- HSN Code Field -->
               <div class="form-group {% if form.hsn_code.errors %}has-error{% endif %}">
@@ -171,24 +180,7 @@
                 {% endif %}
               </div>
             </div>
-            <div class="col-md-6">
-              <!-- GST Percentage Field -->
-              <div class="form-group {% if form.gst_percentage.errors %}has-error{% endif %}">
-                <label for="{{ form.gst_percentage.id_for_label }}" class="form-label">{{ form.gst_percentage.label }}</label>
-                {{ form.gst_percentage }}
-                <small class="form-help">e.g., 18.00, 28.00 (GST percentage)</small>
-                {% if form.gst_percentage.errors %}
-                  <div class="field-errors">
-                    {% for error in form.gst_percentage.errors %}
-                      <div class="error-message">
-                        <i class="fas fa-exclamation-circle"></i>
-                        {{ error }}
-                      </div>
-                    {% endfor %}
-                  </div>
-                {% endif %}
-              </div>
-            </div>
+            
           </div>
           <!-- Row 4: Description (Full Width) -->
           <div class="form-group {% if form.description.errors %}has-error{% endif %}">
@@ -226,4 +218,32 @@
       </form>
     </div>
   </div>
+
+  <!-- Simple Modals -->
+  {% include "model_forms/category.html" %}
+  {% include "model_forms/cloth.html" %}
+  {% include "model_forms/uom.html" %}
+  {% include "model_forms/hsncode.html" %}
+
+  
 {% endblock content %}
+<!-- Simple Modal System (20 lines total!) -->
+{% block extra_js %}
+<script src="{% static 'js/modelSetup.js' %}"></script>
+<script>
+  
+  // Wait for DOM to be fully loaded
+  $(document).ready(function() {
+
+    $('#id_category, #id_cloth_type, #id_uom, #id_hsn_code').select2({
+      placeholder: "Type to search...",
+      allowClear: true
+    });
+    
+    setupModal('id_category', 'Category', 'new_category', '#add_new_category', '{% url "inventory:category_create_ajax" %}');
+    setupModal('id_cloth_type', 'Cloth Type', 'new_cloth_type', '#add_new_cloth_type', '{% url "inventory:cloth_create_ajax" %}');
+    setupModal('id_uom', 'UOM', 'new_uom', '#add_new_uom', '{% url "inventory:uom_create_ajax" %}');
+    setupModal('id_hsn_code', 'HSN Code', 'new_hsn_code', '#add_new_hsn_code', '{% url "inventory:gst_hsn_create_ajax" %}');
+  });
+</script>
+{% endblock extra_js %}

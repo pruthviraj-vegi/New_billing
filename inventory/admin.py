@@ -5,7 +5,7 @@ from .models import (
     ClothType,
     Color,
     Size,
-    HsnCode,
+    GSTHsnCode,
     Product,
     ProductVariant,
     ProductImage,
@@ -21,9 +21,10 @@ class CategoryAdmin(admin.ModelAdmin):
     ordering = ["name"]
     readonly_fields = ["created_at", "updated_at"]
 
-@admin.register(HsnCode)
-class CategoryAdmin(admin.ModelAdmin):
-    list_display = ["code", "gst_percentage", "description", "created_at", "updated_at"]
+
+@admin.register(GSTHsnCode)
+class GSTHsnCodeAdmin(admin.ModelAdmin):
+    list_display = ["code", "description", "created_at", "updated_at"]
     list_filter = ["created_at", "updated_at"]
     search_fields = ["code", "description"]
     ordering = ["code"]
@@ -70,7 +71,7 @@ class ProductAdmin(admin.ModelAdmin):
         "brand",
         "category",
         "cloth_type",
-        "gst_percentage",
+        "hsn_code",
         "status",
         "created_at",
     ]
@@ -78,7 +79,7 @@ class ProductAdmin(admin.ModelAdmin):
         "status",
         "category",
         "cloth_type",
-        "gst_percentage",
+        "hsn_code",
         "created_at",
         "updated_at",
     ]
@@ -90,7 +91,7 @@ class ProductAdmin(admin.ModelAdmin):
     fieldsets = (
         ("Basic Information", {"fields": ("brand", "name", "description", "status")}),
         ("Classification", {"fields": ("category", "cloth_type")}),
-        ("Tax Information", {"fields": ("hsn_code", "gst_percentage")}),
+        ("Tax Information", {"fields": ("hsn_code",)}),
         (
             "Timestamps",
             {"fields": ("created_at", "updated_at"), "classes": ("collapse",)},

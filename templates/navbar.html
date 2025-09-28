@@ -69,6 +69,10 @@
            class="dropdown-item {% if request.resolver_match.url_name == 'size_home' %}active{% endif %}">Sizes</a>
         <a href="{% url 'inventory:cloth_home' %}"
            class="dropdown-item {% if request.resolver_match.url_name == 'cloth_home' %}active{% endif %}">Cloth Types</a>
+        <a href="{% url 'inventory:uom_home' %}"
+           class="dropdown-item {% if request.resolver_match.url_name == 'uom_home' %}active{% endif %}">UOMs</a>
+        <a href="{% url 'inventory:gst_hsn_home' %}"
+           class="dropdown-item {% if request.resolver_match.url_name == 'gst_hsn_home' %}active{% endif %}">GST HSN Codes</a>
       </div>
     </li>
     <li class="nav-item">

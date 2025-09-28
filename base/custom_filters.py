@@ -3,6 +3,11 @@ import locale
 import base64
 from datetime import datetime, timedelta
 from django.conf import settings
+import logging
+from num2words import num2words
+
+logger = logging.getLogger(__name__)
+
 
 locale.setlocale(locale.LC_ALL, "en_IN")
 
@@ -16,30 +21,123 @@ formate = {
 }
 
 
+def _convert_to_numeric(value):
+    """
+    Bulletproof string-to-number converter that handles various input formats.
+
+    Args:
+        value: String, int, float, or other value to convert
+
+    Returns:
+        float or int: Converted numeric value, or None if conversion fails
+    """
+    if value is None:
+        return None
+
+    # If already a number, return as-is
+    if isinstance(value, (int, float)):
+        return value
+
+    # Convert to string and clean
+    str_value = str(value).strip()
+
+    if not str_value:
+        return None
+
+    # Handle empty string
+    if str_value == "":
+        return None
+
+    # Remove common currency symbols and whitespace
+    cleaned_value = (
+        str_value.replace("₹", "")
+        .replace("$", "")
+        .replace("€", "")
+        .replace("£", "")
+        .replace(",", "")
+        .strip()
+    )
+
+    # Handle negative numbers
+    is_negative = cleaned_value.startswith("-")
+    if is_negative:
+        cleaned_value = cleaned_value[1:]
+
+    # Handle percentage
+    is_percentage = cleaned_value.endswith("%")
+    if is_percentage:
+        cleaned_value = cleaned_value[:-1]
+
+    try:
+        # Try to convert to float first (handles decimals)
+        numeric_value = float(cleaned_value)
+
+        # Apply percentage conversion if needed
+        if is_percentage:
+            numeric_value = numeric_value / 100
+
+        # Apply negative sign if needed
+        if is_negative:
+            numeric_value = -numeric_value
+
+        # Return as int if it's a whole number and not too large
+        if numeric_value.is_integer() and abs(numeric_value) < 1e15:
+            return int(numeric_value)
+
+        return numeric_value
+
+    except (ValueError, OverflowError) as e:
+        logger.warning(f"Failed to convert '{value}' to numeric: {e}")
+        return None
+
+
 @register.filter(name="currency")
 def currency(value, arg=None):
+    """
+    Bulletproof currency formatter that handles strings, integers, floats, and None values.
+    Converts string inputs to appropriate numeric types before formatting.
+    """
     try:
-        if value is None:
+        if value is None or value == "":
             return "0.00"
 
-        return locale.format_string(
+        # Convert string to number if needed
+        numeric_value = _convert_to_numeric(value)
+
+        if numeric_value is None:
+            logger.warning(f"Could not convert value '{value}' to numeric format")
+            return "0.00"
+
+        data = locale.format_string(
             "%%.%df" % formate["frac_digits"],
-            value,
+            numeric_value,
             grouping=formate["grouping"],
             monetary=False,
         )
-    except (TypeError, ValueError) as e:
-        print(e)
-        return value
+        return data
+    except (TypeError, ValueError, locale.Error) as e:
+        logger.error(f"Currency formatting error for value '{value}': {e}")
+        return "0.00"
 
 
 @register.filter(name="currency_nonDecimal")
 def currency_nonDecimal(value, arg=None):
+    """
+    Bulletproof non-decimal currency formatter for integer values.
+    """
     try:
-        if value is None:
+        if value is None or value == "":
             return "0"
 
-        value_int = int(value)
+        # Convert string to number if needed
+        numeric_value = _convert_to_numeric(value)
+
+        if numeric_value is None:
+            logger.warning(f"Could not convert value '{value}' to numeric format")
+            return "0"
+
+        # Convert to integer
+        value_int = int(numeric_value)
 
         return locale.format_string(
             "%d",
@@ -47,14 +145,15 @@ def currency_nonDecimal(value, arg=None):
             grouping=formate["grouping"],
             monetary=False,
         )
-    except (TypeError, ValueError) as e:
-        return value
+    except (TypeError, ValueError, locale.Error) as e:
+        logger.error(f"Currency non-decimal formatting error for value '{value}': {e}")
+        return "0"
 
 
 @register.filter(name="currency_abbreviation")
 def currency_abbreviation(value):
     """
-    Formats a number into an international currency format or a 'k' abbreviation.
+    Bulletproof currency abbreviation formatter that handles strings and various input formats.
 
     Examples:
     1000 -> 1k
@@ -62,21 +161,25 @@ def currency_abbreviation(value):
     1234567 -> 1.23M
     """
     try:
-        if value is None:
+        if value is None or value == "":
+            return "0.00"
+
+        # Convert string to number if needed
+        numeric_value = _convert_to_numeric(value)
+
+        if numeric_value is None:
+            logger.warning(f"Could not convert value '{value}' to numeric format")
             return "0.00"
 
         # Check for 'k', 'M', 'B' abbreviations
-        if value >= 1_000_000_000:
-            return f"{value / 1_000_000_000:.2f}B"
-        elif value >= 1_000_000:
-            return f"{value / 1_000_000:.2f}M"
-        elif value >= 1000:
-            return f"{value / 1000:.1f}k"
+        if numeric_value >= 1_000_000_000:
+            return f"{numeric_value / 1_000_000_000:.2f}B"
+        elif numeric_value >= 1_000_000:
+            return f"{numeric_value / 1_000_000:.2f}M"
+        elif numeric_value >= 1000:
+            return f"{numeric_value / 1000:.1f}k"
 
         # Set locale for international formatting (e.g., thousands separators)
-        # You may need to set this globally in your Django settings or project entry point
-        # For example: locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
-        # Here, we'll try a default to ensure it works
         try:
             locale.setlocale(locale.LC_ALL, "")
         except locale.Error:
@@ -84,16 +187,34 @@ def currency_abbreviation(value):
             locale.setlocale(locale.LC_ALL, "en_US.UTF-8")
 
         # Use locale.format_string for international formatting
-        # locale.format_string requires a format specifier like "%.2f"
-        return locale.format_string("%.2f", value, grouping=True)
+        return locale.format_string("%.2f", numeric_value, grouping=True)
 
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, locale.Error) as e:
+        logger.error(f"Currency abbreviation formatting error for value '{value}': {e}")
+        return "0.00"
+
+
+@register.filter(name="currencyToWord")
+def currencyToyWord(value, arg=None):
+    try:
+        amount = float(value)
+        return num2words(amount, lang="en_IN", to="currency", currency="INR").title()
+    except BaseException as e:
+        print(e)
         return value
 
 
 @register.filter(name="phone_number")
 def phone_number(value):
-    return f"+91 {value}"
+    if value is None:
+        return ""
+    try:
+        numbers = value.replace(" ", "")
+        return f"{numbers[:5]} {numbers[5:]}" if len(numbers) == 10 else numbers
+    except (TypeError, ValueError) as e:
+        logger.error(e)
+        return value
+
 
 @register.filter(name="b64encode")
 def base64_encode(value):
@@ -102,21 +223,64 @@ def base64_encode(value):
 
 @register.filter(name="sub")
 def sub(value, arg):
-    """Subtract the arg from the value."""
+    """Bulletproof subtraction filter that handles strings and various input formats."""
     try:
-        return float(value) - float(arg)
-    except (TypeError, ValueError):
-        return value
+        numeric_value = _convert_to_numeric(value)
+        numeric_arg = _convert_to_numeric(arg)
+
+        if numeric_value is None or numeric_arg is None:
+            logger.warning(
+                f"Could not convert values '{value}' or '{arg}' to numeric format"
+            )
+            return 0
+
+        return numeric_value - numeric_arg
+    except (TypeError, ValueError) as e:
+        logger.error(f"Subtraction error for values '{value}' and '{arg}': {e}")
+        return 0
 
 
 @register.filter(name="div")
 def div(value, arg):
-    """Divide the value by the arg."""
+    """Bulletproof division filter that handles strings and various input formats."""
     try:
-        if float(arg) == 0:
+        numeric_value = _convert_to_numeric(value)
+        numeric_arg = _convert_to_numeric(arg)
+
+        if numeric_value is None or numeric_arg is None:
+            logger.warning(
+                f"Could not convert values '{value}' or '{arg}' to numeric format"
+            )
             return 0
-        return float(value) / float(arg)
-    except (TypeError, ValueError, ZeroDivisionError):
+
+        if numeric_arg == 0:
+            logger.warning(
+                f"Division by zero attempted with values '{value}' and '{arg}'"
+            )
+            return 0
+
+        return numeric_value / numeric_arg
+    except (TypeError, ValueError, ZeroDivisionError) as e:
+        logger.error(f"Division error for values '{value}' and '{arg}': {e}")
+        return 0
+
+
+@register.filter(name="mul")
+def mul(value, arg):
+    """Bulletproof multiplication filter that handles strings and various input formats."""
+    try:
+        numeric_value = _convert_to_numeric(value)
+        numeric_arg = _convert_to_numeric(arg)
+
+        if numeric_value is None or numeric_arg is None:
+            logger.warning(
+                f"Could not convert values '{value}' or '{arg}' to numeric format"
+            )
+            return 0
+
+        return numeric_value * numeric_arg
+    except (TypeError, ValueError) as e:
+        logger.error(f"Multiplication error for values '{value}' and '{arg}': {e}")
         return 0
 
 
@@ -156,7 +320,8 @@ def to_datetime(value):
             text = text[:-1]
         try:
             return datetime.fromisoformat(text)
-        except Exception:
+        except Exception as e:
+            logger.error(e)
             return None
     return None
 
@@ -172,3 +337,12 @@ def expiry(value):
         return None
     timeout_seconds = getattr(settings, "INACTIVITY_TIMEOUT_SECONDS", 3 * 60 * 60)
     return dt + timedelta(seconds=timeout_seconds)
+
+
+@register.filter(name="range")
+def range_filter(value):
+    """Creates a range from 0 to value-1"""
+    try:
+        return range(int(value))
+    except (ValueError, TypeError):
+        return range(0)

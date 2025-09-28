@@ -236,15 +236,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Track original values to detect changes
     const originalValues = new Map();
     
-    console.log('Found elements:', {
-        updateButtons: updateItemBtn.length,
-        quantityInputs: quantityInputs.length,
-        conditionSelects: conditionSelects.length,
-        reasonSelects: reasonSelects.length,
-        updateAllBtn: !!updateAllBtn,
-        resetAllBtn: !!resetAllBtn,
-        saveChangesBtn: !!saveChangesBtn
-    });
+    
     
     // Store original values for each item
     function storeOriginalValues() {
@@ -452,10 +444,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     resolve(data);
                 } else {
+                    showMessage(data.error || 'Error updating item', 'error');
                     reject(new Error(data.error || 'Error updating item'));
                 }
             })
             .catch(error => {
+                console.error('Error updating item:', error);
+                showMessage('Error updating item', 'error');
                 reject(error);
             });
         });

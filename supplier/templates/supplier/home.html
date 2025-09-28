@@ -99,7 +99,7 @@
               </td>
               <td>{{ supplier.address|truncatechars:15|default:"-" }}</td>
               <td>
-                {{ supplier.phone }}
+                {{ supplier.phone|phone_number }}
                 <br>
                 <small class="secondary-text text-muted">{{ supplier.email|default:"-" }}</small>
               </td>

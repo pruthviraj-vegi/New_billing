@@ -28,6 +28,7 @@ urlpatterns = [
     path("returns/fetch/", views_return.fetch_return_invoices, name="fetch_return_invoices"),
     path("returns/create/", views_return.ReturnInvoiceCreateView.as_view(), name="return_create"),
     path("returns/detail/<int:pk>/", views_return.ReturnInvoiceDetailView.as_view(), name="return_detail"),
+    path("returns/auto-create/<int:invoice_id>/", views_return.create_auto_return_invoice, name="create_auto_return_invoice"),
     path("returns/stock-adjustment/<int:pk>/", views_return.ReturnStockAdjustmentView.as_view(), name="return_stock_adjustment"),
     path("returns/update-item/<int:item_id>/", views_return.update_return_item, name="update_return_item"),
     path("returns/submit/<int:pk>/", views_return.submit_return_invoice, name="submit_return_invoice"),

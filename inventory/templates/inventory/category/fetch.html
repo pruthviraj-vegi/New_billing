@@ -19,10 +19,7 @@
                 {% endif %}
             </td>
             <td>
-                <span class="stat-value">{{ category.products.count }}</span>
-            </td>
-            <td>
-                <span class="stat-value">{{ category.products.count }}</span>
+                <span class="badge badge-primary">{{ category.products.count }}</span>
             </td>
             <td>{{ category.created_at|date:"M d, Y" }}</td>
             <td>

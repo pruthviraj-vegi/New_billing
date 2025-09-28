@@ -19,7 +19,7 @@
                 {% endif %}
             </td>
             <td>
-                <strong>{{ customer.phone_number }}</strong>
+                <strong>{{ customer.phone_number|phone_number }}</strong>
             </td>
             <td>
                 <span class="text-muted">{{ customer.short_address|default:"-" }}</span>

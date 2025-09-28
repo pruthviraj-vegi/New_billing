@@ -1,5 +1,13 @@
 from django.contrib import admin
-from .models import Invoice, InvoiceItem, PaymentAllocation, AuditTable, InvoiceAudit
+from .models import (
+    Invoice,
+    InvoiceItem,
+    PaymentAllocation,
+    AuditTable,
+    InvoiceAudit,
+    ReturnInvoice,
+    ReturnInvoiceItem,
+)
 
 
 @admin.register(Invoice)
@@ -65,14 +73,12 @@ class InvoiceItemAdmin(admin.ModelAdmin):
         "mrp",
         "unit_price",
         "purchase_price",
-        "net_amount_display",
-        "calculated_tax_amount_display",
-        "total_amount_display",
+        "amount_display",
         "created_at",
     )
     list_filter = (
-        "invoice",
-        "product_variant",
+        # "invoice",
+        # "product_variant",
         "created_at",
     )
     search_fields = (
@@ -86,20 +92,10 @@ class InvoiceItemAdmin(admin.ModelAdmin):
         "updated_at",
     )
 
-    def net_amount_display(self, obj):
-        return obj.net_amount
+    def amount_display(self, obj):
+        return obj.amount
 
-    net_amount_display.short_description = "Net Amount"
-
-    def calculated_tax_amount_display(self, obj):
-        return obj.calculated_tax_amount
-
-    calculated_tax_amount_display.short_description = "Tax Amount"
-
-    def total_amount_display(self, obj):
-        return obj.total_amount
-
-    total_amount_display.short_description = "Total"
+    amount_display.short_description = "Amount"
 
 
 @admin.register(PaymentAllocation)
@@ -161,8 +157,10 @@ class PaymentAllocationAdmin(admin.ModelAdmin):
     )
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related(
-            "payment__customer", "invoice", "created_by"
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("payment__customer", "invoice", "created_by")
         )
 
 
@@ -337,6 +335,280 @@ class InvoiceAuditAdmin(admin.ModelAdmin):
     )
 
     def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .select_related("invoice", "audit_table", "changed_by")
+        )
+
+
+@admin.register(ReturnInvoice)
+class ReturnInvoiceAdmin(admin.ModelAdmin):
+    """Admin interface for ReturnInvoice model."""
+
+    list_display = [
+        "return_number",
+        "invoice",
+        "customer",
+        "status",
+        "refund_type",
+        "reason",
+        "total_amount",
+        "refund_amount",
+        "restocking_fee",
+        "return_date",
+        "approved_date",
+        "processed_date",
+        "created_by",
+        "created_at",
+    ]
+
+    list_display_links = ["return_number", "invoice"]
+
+    search_fields = [
+        "return_number",
+        "invoice__invoice_number",
+        "customer__name",
+        "customer__phone_number",
+        "notes",
+        "internal_notes",
+        "created_by__username",
+    ]
+
+    list_filter = [
+        "status",
+        "refund_type",
+        "reason",
+        "financial_year",
+        ("return_date", admin.DateFieldListFilter),
+        ("approved_date", admin.DateFieldListFilter),
+        ("processed_date", admin.DateFieldListFilter),
+        ("created_at", admin.DateFieldListFilter),
+        "created_by",
+        "approved_by",
+        "processed_by",
+    ]
+
+    date_hierarchy = "return_date"
+
+    readonly_fields = [
+        "return_number",
+        "sequence_no",
+        "financial_year",
+        "created_at",
+        "updated_at",
+    ]
+
+    autocomplete_fields = [
+        "invoice",
+        "customer",
+        "created_by",
+        "modified_by",
+        "approved_by",
+        "processed_by",
+    ]
+
+    list_per_page = 25
+    ordering = ["-created_at"]
+    list_select_related = [
+        "invoice",
+        "customer",
+        "created_by",
+        "approved_by",
+        "processed_by",
+    ]
+
+    fieldsets = (
+        (
+            "Return Information",
+            {
+                "fields": (
+                    "return_number",
+                    "invoice",
+                    "customer",
+                    "sequence_no",
+                    "financial_year",
+                )
+            },
+        ),
+        (
+            "Return Details",
+            {
+                "fields": (
+                    "refund_type",
+                    "status",
+                    "reason",
+                    "return_date",
+                )
+            },
+        ),
+        (
+            "Financial Information",
+            {
+                "fields": (
+                    "total_amount",
+                    "refund_amount",
+                    "restocking_fee",
+                )
+            },
+        ),
+        (
+            "Processing Dates",
+            {
+                "fields": (
+                    "approved_date",
+                    "processed_date",
+                )
+            },
+        ),
+        (
+            "Notes",
+            {
+                "fields": (
+                    "notes",
+                    "internal_notes",
+                )
+            },
+        ),
+        (
+            "Workflow",
+            {
+                "fields": (
+                    "approved_by",
+                    "processed_by",
+                )
+            },
+        ),
+        (
+            "System Information",
+            {
+                "fields": (
+                    "created_by",
+                    "modified_by",
+                    "created_at",
+                    "updated_at",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    def get_queryset(self, request):
         return super().get_queryset(request).select_related(
-            "invoice", "audit_table", "changed_by"
+            "invoice", "customer", "created_by", "approved_by", "processed_by"
+        )
+
+
+@admin.register(ReturnInvoiceItem)
+class ReturnInvoiceItemAdmin(admin.ModelAdmin):
+    """Admin interface for ReturnInvoiceItem model."""
+
+    list_display = [
+        "return_invoice",
+        "product_variant",
+        "quantity_original",
+        "quantity_returned",
+        "unit_price",
+        "total_amount",
+        "condition",
+        "return_reason",
+        "created_at",
+    ]
+
+    list_display_links = ["return_invoice", "product_variant"]
+
+    search_fields = [
+        "return_invoice__return_number",
+        "return_invoice__invoice__invoice_number",
+        "product_variant__product__name",
+        "product_variant__variant_name",
+        "original_invoice_item__id",
+        "notes",
+    ]
+
+    list_filter = [
+        "condition",
+        "return_reason",
+        ("created_at", admin.DateFieldListFilter),
+        ("updated_at", admin.DateFieldListFilter),
+    ]
+
+    date_hierarchy = "created_at"
+
+    readonly_fields = [
+        "original_invoice_item",
+        "created_at",
+        "updated_at",
+    ]
+
+    autocomplete_fields = [
+        "return_invoice",
+        "product_variant",
+        "original_invoice_item",
+    ]
+
+    list_per_page = 25
+    ordering = ["-created_at"]
+    list_select_related = [
+        "return_invoice",
+        "product_variant",
+        "original_invoice_item",
+    ]
+
+    fieldsets = (
+        (
+            "Return Item Information",
+            {
+                "fields": (
+                    "return_invoice",
+                    "product_variant",
+                    "original_invoice_item",
+                )
+            },
+        ),
+        (
+            "Quantities",
+            {
+                "fields": (
+                    "quantity_original",
+                    "quantity_returned",
+                )
+            },
+        ),
+        (
+            "Pricing",
+            {
+                "fields": (
+                    "unit_price",
+                    "total_amount",
+                )
+            },
+        ),
+        (
+            "Return Details",
+            {
+                "fields": (
+                    "condition",
+                    "return_reason",
+                    "notes",
+                )
+            },
+        ),
+        (
+            "System Information",
+            {
+                "fields": (
+                    "created_at",
+                    "updated_at",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related(
+            "return_invoice__invoice",
+            "product_variant__product",
+            "original_invoice_item",
         )

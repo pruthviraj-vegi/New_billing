@@ -4,6 +4,10 @@ Invoice-related choices and constants
 
 from django.db import models
 
+class GstTypeChoices(models.TextChoices):
+    """GST type choices"""
+    CGST_SGST = "CGST_SGST", "CGST/SGST"
+    IGST = "IGST", "IGST"
 
 class InvoiceTypeChoices(models.TextChoices):
     """Invoice type choices"""

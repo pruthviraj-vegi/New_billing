@@ -1,5 +1,8 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.db.models import Sum, F, Q
+from django.db.models import Sum, F, Q, Case, When, Count
+from django.db.models.functions import Abs, Coalesce
+from django.db import models
+from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
@@ -17,10 +20,20 @@ from django.db import transaction
 from .forms import (
     ProductForm,
     VariantForm,
+    SizeForm,
+    ColorForm,
+    CategoryForm,
+    ClothTypeForm,
+    UOMForm,
+    GSTHsnCodeForm,
 )
-from .models import Product, ProductVariant, InventoryLog
+from .models import Product, ProductVariant, InventoryLog, Size
 
 from supplier.models import SupplierInvoice, Supplier
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def inventory_dashboard(request):
@@ -176,6 +189,12 @@ class CreateProduct(View):
         context["title"] = self.title
         context["product_form"] = self.product_form
         context["variant_form"] = self.variant_form
+        context["category_form"] = CategoryForm()
+        context["cloth_type_form"] = ClothTypeForm()
+        context["uom_form"] = UOMForm()
+        context["gst_hsn_form"] = GSTHsnCodeForm()
+        context["size_form"] = SizeForm()
+        context["color_form"] = ColorForm()
         return context
 
     def post(self, request):
@@ -197,7 +216,7 @@ class CreateProduct(View):
                 messages.success(request, "Product created successfully")
                 return redirect("inventory_products:details", product_id=product.id)
         else:
-            print(product_form.errors, variant_form.errors)
+            logger.error(f"Form invalid: {product_form.errors}, {variant_form.errors}")
             messages.error(request, "Please correct the errors below.")
             return render(request, self.template_name, self.get_context_data())
 
@@ -242,6 +261,7 @@ class DeleteProductVariant(DeleteView):
             return redirect("inventory:product_home")
 
     def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
         messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
 
@@ -284,9 +304,12 @@ def variant_update(request, pk):
                     )
                     return redirect("inventory:variant_details", pk=pk)
             except Exception as e:
+                logger.error(f"Error updating variant: {str(e)}")
                 messages.error(request, f"Error updating variant: {str(e)}")
     else:
         form = VariantForm(instance=variant)
+        logger.error(f"Form invalid: {form.errors}")
+        messages.error(request, "Please correct the errors below.")
 
     context = {
         "form": form,
@@ -299,129 +322,142 @@ def variant_update(request, pk):
 
 @login_required
 def supplier_invoice_tracking(request):
-    """View to track inventory by supplier invoice"""
+    """Optimized view to track inventory by supplier invoice"""
 
-    # Get search and filter parameters
     search_query = request.GET.get("search", "")
     supplier_filter = request.GET.get("supplier", "")
     sort_by = request.GET.get("sort", "-invoice_date")
 
-    # Base queryset
-    supplier_invoices = (
-        InventoryLog.objects.filter(
-            supplier_invoice__isnull=False, transaction_type__in=["STOCK_IN", "INITIAL"]
+    # Base queryset: work at SupplierInvoice level instead of InventoryLog
+    supplier_invoices = SupplierInvoice.objects.filter(is_deleted=False).annotate(
+        stock_in=Coalesce(
+            Sum(
+                Case(
+                    When(
+                        inventory_logs__transaction_type__in=["STOCK_IN", "INITIAL"],
+                        then=F("inventory_logs__quantity_change"),
+                    ),
+                    default=Decimal("0"),
+                    output_field=models.DecimalField(),
+                )
+            ),
+            Decimal("0"),
+        ),
+        sales=Coalesce(
+            Sum(
+                Case(
+                    When(
+                        inventory_logs__transaction_type="SALE",
+                        then=Abs(F("inventory_logs__quantity_change")),
+                    ),
+                    default=Decimal("0"),
+                    output_field=models.DecimalField(),
+                )
+            ),
+            Decimal("0"),
         )
-        .values(
-            "supplier_invoice__invoice_number",
-            "supplier_invoice__supplier__name",
-            "supplier_invoice__invoice_date",
-            "supplier_invoice__total_amount",
+        - Coalesce(
+            Sum(
+                Case(
+                    When(
+                        inventory_logs__transaction_type="RETURN",
+                        then=Abs(F("inventory_logs__quantity_change")),
+                    ),
+                    default=Decimal("0"),
+                    output_field=models.DecimalField(),
+                )
+            ),
+            Decimal("0"),
         )
-        .distinct()
+        - Coalesce(
+            Sum(
+                Case(
+                    When(
+                        inventory_logs__transaction_type="DAMAGE",
+                        then=Abs(F("inventory_logs__quantity_change")),
+                    ),
+                    default=Decimal("0"),
+                    output_field=models.DecimalField(),
+                )
+            ),
+            Decimal("0"),
+        ),
+        products_count=Count(
+            "inventory_logs__variant__product",
+            filter=Q(inventory_logs__transaction_type__in=["STOCK_IN", "INITIAL"]),
+            distinct=True,
+        ),
     )
 
     # Apply search filter
     if search_query:
         supplier_invoices = supplier_invoices.filter(
-            Q(supplier_invoice__invoice_number__icontains=search_query)
-            | Q(supplier_invoice__supplier__name__icontains=search_query)
+            Q(invoice_number__icontains=search_query)
+            | Q(supplier__name__icontains=search_query)
         )
 
     # Apply supplier filter
     if supplier_filter:
-        supplier_invoices = supplier_invoices.filter(
-            supplier_invoice__supplier_id=supplier_filter
-        )
+        supplier_invoices = supplier_invoices.filter(supplier_id=supplier_filter)
 
     # Apply sorting
-    if sort_by == "supplier_name":
-        supplier_invoices = supplier_invoices.order_by(
-            "supplier_invoice__supplier__name"
-        )
-    elif sort_by == "-supplier_name":
-        supplier_invoices = supplier_invoices.order_by(
-            "-supplier_invoice__supplier__name"
-        )
-    elif sort_by == "invoice_date":
-        supplier_invoices = supplier_invoices.order_by("supplier_invoice__invoice_date")
-    elif sort_by == "-invoice_date":
-        supplier_invoices = supplier_invoices.order_by(
-            "-supplier_invoice__invoice_date"
-        )
-    elif sort_by == "stock_in_quantity":
-        supplier_invoices = supplier_invoices.order_by("stock_in_quantity")
-    elif sort_by == "-stock_in_quantity":
-        supplier_invoices = supplier_invoices.order_by("-stock_in_quantity")
-    else:
-        supplier_invoices = supplier_invoices.order_by(
-            "-supplier_invoice__invoice_date"
-        )
+    ordering_map = {
+        "supplier_name": "supplier__name",
+        "-supplier_name": "-supplier__name",
+        "invoice_date": "invoice_date",
+        "-invoice_date": "-invoice_date",
+        "stock_in_quantity": "stock_in",
+        "-stock_in_quantity": "-stock_in",
+        "sales_quantity": "sales",
+        "-sales_quantity": "-sales",
+    }
+    supplier_invoices = supplier_invoices.order_by(
+        ordering_map.get(sort_by, "-invoice_date")
+    )
 
+    # Prepare summaries in Python
     invoice_summaries = []
     for invoice in supplier_invoices:
-        invoice_number = invoice["supplier_invoice__invoice_number"]
-        supplier_name = invoice["supplier_invoice__supplier__name"]
-
-        # Get stock in for this invoice
-        stock_in = (
-            InventoryLog.objects.filter(
-                supplier_invoice__invoice_number=invoice_number,
-                transaction_type__in=["STOCK_IN", "INITIAL"],
-            ).aggregate(total=Sum("quantity_change"))["total"]
-            or 0
-        )
-
-        # Get sales for this invoice
-        sales = abs(
-            InventoryLog.objects.filter(
-                supplier_invoice__invoice_number=invoice_number, transaction_type="SALE"
-            ).aggregate(total=Sum("quantity_change"))["total"]
-            or 0
-        )
-
-        # Get unique products in this invoice
-        products_count = (
-            InventoryLog.objects.filter(
-                supplier_invoice__invoice_number=invoice_number,
-                transaction_type__in=["STOCK_IN", "INITIAL"],
-            )
-            .values("variant__product__brand", "variant__product__name")
-            .distinct()
-            .count()
-        )
-
+        stock_in = invoice.stock_in or 0
+        sales = invoice.sales or 0
         remaining = stock_in - sales
+        remaining_percentage = (
+            round(100 - (remaining / stock_in) * 100, 2) if stock_in > 0 else 0
+        )
 
         invoice_summaries.append(
             {
-                "invoice_number": invoice_number,
-                "supplier_name": supplier_name,
-                "invoice_date": invoice["supplier_invoice__invoice_date"],
-                "total_amount": invoice["supplier_invoice__total_amount"],
+                "id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "supplier_name": invoice.supplier.name,
+                "invoice_date": invoice.invoice_date,
+                "total_amount": invoice.total_amount,
                 "stock_in_quantity": stock_in,
                 "sales_quantity": sales,
                 "remaining_quantity": remaining,
-                "remaining_percentage": round(100 - (remaining / stock_in) * 100, 2),
-                "products_count": products_count,
+                "remaining_percentage": remaining_percentage,
+                "products_count": invoice.products_count,
             }
         )
 
-    # Get suppliers for filter dropdown
     suppliers = Supplier.objects.filter(is_deleted=False).order_by("name")
 
-    context = {
-        "invoice_summaries": invoice_summaries,
-        "title": "Supplier Invoice Tracking",
-        "search_query": search_query,
-        "supplier_filter": supplier_filter,
-        "sort_by": sort_by,
-        "suppliers": suppliers,
-    }
-    return render(request, "inventory/supplier_invoice_tracking.html", context)
+    return render(
+        request,
+        "inventory/supplier_invoice_tracking.html",
+        {
+            "invoice_summaries": invoice_summaries,
+            "title": "Supplier Invoice Tracking",
+            "search_query": search_query,
+            "supplier_filter": supplier_filter,
+            "sort_by": sort_by,
+            "suppliers": suppliers,
+        },
+    )
 
 
 @login_required
-def supplier_invoice_details(request, invoice_number):
+def supplier_invoice_details(request, invoice_id):
     """View to show detailed breakdown of a specific supplier invoice"""
 
     # Get search and filter parameters
@@ -429,12 +465,15 @@ def supplier_invoice_details(request, invoice_number):
     status_filter = request.GET.get("status", "")
     sort_by = request.GET.get("sort", "-stock_in_quantity")
 
-    # Get all products in this invoice
-    products_in_invoice = (
-        InventoryLog.objects.filter(
-            supplier_invoice__invoice_number=invoice_number,
-            transaction_type__in=["STOCK_IN", "INITIAL"],
-        )
+    # Build base queryset for products in this invoice
+    base_filter = {
+        "supplier_invoice__id": invoice_id,
+        "transaction_type__in": ["STOCK_IN", "INITIAL"],
+    }
+
+    # Get products with stock-in data
+    products_query = (
+        InventoryLog.objects.filter(**base_filter)
         .values(
             "variant__product__brand",
             "variant__product__name",
@@ -451,70 +490,77 @@ def supplier_invoice_details(request, invoice_number):
 
     # Apply search filter
     if search_query:
-        products_in_invoice = products_in_invoice.filter(
+        products_query = products_query.filter(
             Q(variant__product__brand__icontains=search_query)
             | Q(variant__product__name__icontains=search_query)
             | Q(variant__barcode__icontains=search_query)
         )
 
-    # Apply status filter
-    if status_filter:
-        if status_filter == "sold_out":
-            # Filter products that are sold out (remaining = 0)
-            pass  # Will filter after calculating remaining
-        elif status_filter == "in_stock":
-            # Filter products that have remaining stock
-            pass  # Will filter after calculating remaining
-        elif status_filter == "low_stock":
-            # Filter products with low remaining stock (less than 5)
-            pass  # Will filter after calculating remaining
+    # Apply sorting for stock-in data
+    sort_mapping = {
+        "brand": "variant__product__brand",
+        "-brand": "-variant__product__brand",
+        "stock_in_quantity": "stock_in_quantity",
+        "-stock_in_quantity": "-stock_in_quantity",
+    }
 
-    # Apply sorting
-    if sort_by == "brand":
-        products_in_invoice = products_in_invoice.order_by("variant__product__brand")
-    elif sort_by == "-brand":
-        products_in_invoice = products_in_invoice.order_by("-variant__product__brand")
-    elif sort_by == "stock_in_quantity":
-        products_in_invoice = products_in_invoice.order_by("stock_in_quantity")
-    elif sort_by == "-stock_in_quantity":
-        products_in_invoice = products_in_invoice.order_by("-stock_in_quantity")
-    elif sort_by == "sales_quantity":
-        products_in_invoice = products_in_invoice.order_by("sales_quantity")
-    elif sort_by == "-sales_quantity":
-        products_in_invoice = products_in_invoice.order_by("-sales_quantity")
-    else:
-        products_in_invoice = products_in_invoice.order_by("-stock_in_quantity")
+    order_field = sort_mapping.get(sort_by, "-stock_in_quantity")
+    products_in_invoice = list(products_query.order_by(order_field))
 
-    # Get sales for each product in this invoice
+    # Get sales data for all products in one query (including returns and damages)
+    barcodes = [p["variant__barcode"] for p in products_in_invoice]
+    sales_data = {}
+    if barcodes:
+        sales_queryset = (
+            InventoryLog.objects.filter(
+                supplier_invoice__id=invoice_id,
+                variant__barcode__in=barcodes,
+            )
+            .values("variant__barcode")
+            .annotate(
+                total_sales=Coalesce(
+                    Sum(
+                        Case(
+                            When(transaction_type="SALE", then=F("quantity_change")),
+                            default=Decimal("0"),
+                            output_field=models.DecimalField(),
+                        )
+                    ),
+                    Decimal("0"),
+                )
+                + Coalesce(
+                    Sum(
+                        Case(
+                            When(transaction_type="RETURN", then=F("quantity_change")),
+                            default=Decimal("0"),
+                            output_field=models.DecimalField(),
+                        )
+                    ),
+                    Decimal("0"),
+                )
+                - Coalesce(
+                    Sum(
+                        Case(
+                            When(transaction_type="DAMAGE", then=F("quantity_change")),
+                            default=Decimal("0"),
+                            output_field=models.DecimalField(),
+                        )
+                    ),
+                    Decimal("0"),
+                )
+            )
+        )
+        sales_data = {
+            item["variant__barcode"]: abs(item["total_sales"] or 0)
+            for item in sales_queryset
+        }
+
+    # Add sales and remaining quantities to products
     for product in products_in_invoice:
         barcode = product["variant__barcode"]
-
-        # Get sales for this specific product from this invoice
-        sales = abs(
-            InventoryLog.objects.filter(
-                supplier_invoice__invoice_number=invoice_number,
-                transaction_type="SALE",
-                variant__barcode=barcode,
-            ).aggregate(total=Sum("quantity_change"))["total"]
-            or 0
-        )
-
-        product["sales_quantity"] = sales
-        product["remaining_quantity"] = product["stock_in_quantity"] - sales
-
-    total_sales = abs(
-        InventoryLog.objects.filter(
-            supplier_invoice__invoice_number=invoice_number,
-        ).aggregate(total=Sum("quantity_change"))["total"]
-        or 0
-    )
-    total_stock_in = (
-        InventoryLog.objects.filter(
-            supplier_invoice__invoice_number=invoice_number,
-            transaction_type__in=["STOCK_IN", "INITIAL"],
-        ).aggregate(total=Sum("quantity_change"))["total"]
-        or 0
-    )
+        sales_quantity = sales_data.get(barcode, 0)
+        product["sales_quantity"] = sales_quantity
+        product["remaining_quantity"] = product["stock_in_quantity"] - sales_quantity
 
     # Apply status filter after calculating remaining quantities
     if status_filter == "sold_out":
@@ -530,21 +576,78 @@ def supplier_invoice_details(request, invoice_number):
             p for p in products_in_invoice if 0 < p["remaining_quantity"] <= 5
         ]
 
-    # Get invoice info
+    # Apply additional sorting after calculating sales quantities
+    if sort_by in [
+        "sales_quantity",
+        "-sales_quantity",
+        "remaining_quantity",
+        "-remaining_quantity",
+    ]:
+        reverse = sort_by.startswith("-")
+        field = sort_by.lstrip("-")
+        products_in_invoice.sort(key=lambda x: x[field], reverse=reverse)
+
+    # Single query for totals using aggregation
+    totals = InventoryLog.objects.filter(supplier_invoice__id=invoice_id).aggregate(
+        total_sales=Coalesce(
+            Sum(
+                Case(
+                    When(transaction_type="SALE", then=F("quantity_change")),
+                    default=Decimal("0"),
+                    output_field=models.DecimalField(),
+                )
+            )
+            + Sum(
+                Case(
+                    When(transaction_type="RETURN", then=F("quantity_change")),
+                    default=Decimal("0"),
+                    output_field=models.DecimalField(),
+                )
+            )
+            - Sum(
+                Case(
+                    When(transaction_type="DAMAGE", then=F("quantity_change")),
+                    default=Decimal("0"),
+                    output_field=models.DecimalField(),
+                )
+            ),
+            Decimal("0"),
+        ),
+        total_stock_in=Coalesce(
+            Sum(
+                Case(
+                    When(
+                        transaction_type__in=["STOCK_IN", "INITIAL"],
+                        then=F("quantity_change"),
+                    ),
+                    default=Decimal("0"),
+                    output_field=models.DecimalField(),
+                )
+            ),
+            Decimal("0"),
+        ),
+    )
+
+    # Get invoice info in single query
     invoice_info = (
-        InventoryLog.objects.filter(supplier_invoice__invoice_number=invoice_number)
-        .values("supplier_invoice__supplier__name", "supplier_invoice__invoice_date")
+        InventoryLog.objects.filter(supplier_invoice__id=invoice_id)
+        .select_related("supplier_invoice__supplier")
+        .values(
+            "supplier_invoice__supplier__name",
+            "supplier_invoice__invoice_date",
+            "supplier_invoice__invoice_number",
+        )
         .first()
     )
 
     context = {
-        "invoice_number": invoice_number,
+        "invoice_number": invoice_info["supplier_invoice__invoice_number"],
         "invoice_info": invoice_info,
         "products_in_invoice": products_in_invoice,
-        "title": f"Invoice {invoice_number} Details",
-        "total_sales": total_sales,
-        "total_stock_in": total_stock_in,
-        "total_remaining": total_stock_in - total_sales,
+        "title": f"Invoice - {invoice_info['supplier_invoice__invoice_number']}",
+        "total_sales": abs(totals["total_sales"]),
+        "total_stock_in": totals["total_stock_in"],
+        "total_remaining": totals["total_stock_in"] - abs(totals["total_sales"]),
         "search_query": search_query,
         "status_filter": status_filter,
         "sort_by": sort_by,
@@ -555,7 +658,7 @@ def supplier_invoice_details(request, invoice_number):
 @login_required
 def product_invoice_analytics(request, variant_id):
     """View to show analytics for a specific product variant by supplier invoice"""
-    
+
     variant = get_object_or_404(ProductVariant, id=variant_id)
 
     # Get all supplier invoices for this variant
@@ -629,7 +732,7 @@ def product_invoice_analytics(request, variant_id):
 @login_required
 def supplier_analytics(request, supplier_id):
     """View to show analytics for a specific supplier"""
-    
+
     supplier = get_object_or_404(Supplier, id=supplier_id)
 
     # Get all invoices for this supplier
@@ -687,52 +790,3 @@ def supplier_analytics(request, supplier_id):
         "title": f"{supplier.name} - Analytics",
     }
     return render(request, "inventory/supplier_analytics.html", context)
-
-
-@csrf_exempt
-@require_POST
-def create_size_ajax(request):
-    """AJAX view to create a new size"""
-    try:
-        data = json.loads(request.body)
-        name = data.get('name', '').strip()
-        description = data.get('description', '').strip()
-        
-        if not name:
-            return JsonResponse({
-                'success': False,
-                'error': 'Size name is required'
-            }, status=400)
-        
-        # Check if size already exists
-        if Size.objects.filter(name__iexact=name).exists():
-            return JsonResponse({
-                'success': False,
-                'error': f'Size "{name}" already exists'
-            }, status=400)
-        
-        # Create new size
-        size = Size.objects.create(
-            name=name,
-            description=description
-        )
-        
-        return JsonResponse({
-            'success': True,
-            'size': {
-                'id': size.id,
-                'name': size.name,
-                'description': size.description
-            }
-        })
-        
-    except json.JSONDecodeError:
-        return JsonResponse({
-            'success': False,
-            'error': 'Invalid JSON data'
-        }, status=400)
-    except Exception as e:
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=500)

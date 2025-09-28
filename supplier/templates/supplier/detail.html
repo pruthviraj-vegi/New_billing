@@ -61,7 +61,7 @@
           <div class="detail-contact-compact">
             <div class="contact-item">
               <i class="fas fa-phone"></i>
-              <span>{{ supplier.phone }}</span>
+              <span>{{ supplier.phone|phone_number }}</span>
             </div>
             {% if supplier.email %}
               <div class="contact-item">
