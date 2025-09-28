@@ -263,31 +263,55 @@ def download_customers(request):
 @login_required
 def customer_search_api(request):
     """API endpoint for searching customers (for autocomplete)."""
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
-    
-    query = request.GET.get('q', '').strip()
-    
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    query = request.GET.get("q", "").strip()
+
     if len(query) < 2:
-        return JsonResponse({'customers': []})
-    
+        return JsonResponse({"customers": []})
+
     # Search customers by name or phone number
-    customers = Customer.objects.filter(
-        Q(name__icontains=query) | Q(phone_number__icontains=query),
-        is_deleted=False
-    ).exclude(
-        # Exclude current customer if editing
-        id=request.GET.get('exclude', -1)
-    ).order_by('name')[:10]  # Limit to 10 results
-    
+    customers = (
+        Customer.objects.filter(
+            Q(name__icontains=query) | Q(phone_number__icontains=query),
+            is_deleted=False,
+        )
+        .exclude(
+            # Exclude current customer if editing
+            id=request.GET.get("exclude", -1)
+        )
+        .order_by("name")[:10]
+    )  # Limit to 10 results
+
     # Format response
     customers_data = []
     for customer in customers:
-        customers_data.append({
-            'id': customer.id,
-            'name': customer.name or '',
-            'phone_number': customer.phone_number or '',
-            'email': customer.email or '',
-        })
-    
-    return JsonResponse({'customers': customers_data})
+        customers_data.append(
+            {
+                "id": customer.id,
+                "name": customer.name or "",
+                "phone_number": customer.phone_number or "",
+                "email": customer.email or "",
+            }
+        )
+
+    return JsonResponse({"customers": customers_data})
+
+
+@login_required
+def create_customer_ajax(request):
+    """AJAX endpoint for creating customers via modal"""
+    try:
+        form = CustomerForm(request.POST)
+        if form.is_valid():
+            customer = form.save()
+            return JsonResponse(
+                {
+                    "success": True,
+                    "message": "Customer created successfully",
+                    "data": {"id": customer.id, "name": customer.name},
+                }
+            )
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)})

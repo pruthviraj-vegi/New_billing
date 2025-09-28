@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 from .manager import ProductVariantManager
 
 from base.utility import StringProcessor
+from django.urls import reverse
 
 User = settings.AUTH_USER_MODEL
 
@@ -85,6 +86,9 @@ class Size(models.Model):
         self.description = StringProcessor(self.description).toTitle()
         super().save(*args, **kwargs)
 
+    def get_absolute_url(self):
+        return reverse("inventory:size_home")
+
 
 class UOM(models.Model):
     """
@@ -132,6 +136,9 @@ class UOM(models.Model):
         self.description = StringProcessor(self.description).toTitle()
         self.short_code = StringProcessor(self.short_code).toUppercase()
         super().save(*args, **kwargs)
+
+    def get_absolute_url(self):
+        return reverse("inventory:uom_home")
 
 
 class GSTHsnCode(models.Model):

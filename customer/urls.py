@@ -12,16 +12,35 @@ urlpatterns = [
     path("<int:pk>/", views.customer_detail, name="detail"),
     path("<int:pk>/edit/", views.EditCustomer.as_view(), name="edit"),
     path("<int:pk>/delete/", views.DeleteCustomer.as_view(), name="delete"),
-
     ## credit details
     path("credit/", views_credit.home, name="credit_home"),
+    path("create/ajax/", views.create_customer_ajax, name="create_ajax"),
     path("credit/fetch/", views_credit.fetch_credits, name="credit_fetch"),
     path("credit/<int:customer_id>/", views_credit.credit_detail, name="credit_detail"),
-    path("credit/payment/create/", views_credit.PaymentCreateView.as_view(), name="payment_create"),
-    path("credit/payment/<int:customer_id>/create/", views_credit.PaymentCreateView.as_view(), name="credit_create"),
-    path("credit/payment/<int:pk>/edit/", views_credit.PaymentUpdateView.as_view(), name="payment_edit"),
-    path("credit/payment/<int:pk>/delete/", views_credit.PaymentDeleteView.as_view(), name="payment_delete"),
-
+    path(
+        "credit/payment/create/",
+        views_credit.PaymentCreateView.as_view(),
+        name="payment_create",
+    ),
+    path(
+        "credit/payment/<int:customer_id>/create/",
+        views_credit.PaymentCreateView.as_view(),
+        name="credit_create",
+    ),
+    path(
+        "credit/payment/<int:pk>/edit/",
+        views_credit.PaymentUpdateView.as_view(),
+        name="payment_edit",
+    ),
+    path(
+        "credit/payment/<int:pk>/delete/",
+        views_credit.PaymentDeleteView.as_view(),
+        name="payment_delete",
+    ),
     ## Auto Reallocate (FIFO allocation)
-    path("credit/<int:customer_id>/auto_reallocate/", views_credit.auto_reallocate, name="credit_auto_reallocate"),
+    path(
+        "credit/<int:customer_id>/auto_reallocate/",
+        views_credit.auto_reallocate,
+        name="credit_auto_reallocate",
+    ),
 ]

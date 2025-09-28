@@ -78,7 +78,7 @@
             </div>
             <!-- Created By, Amount, and Discount Row -->
             <!-- Created By Field -->
-            <div class="col-md-4">
+            {% comment %} <div class="col-md-4">
               <div class="form-group {% if form.created_by.errors %}has-error{% endif %}">
                 <label for="{{ form.created_by.id_for_label }}" class="form-label">{{ form.created_by.label }}</label>
                 {{ form.created_by }}
@@ -94,7 +94,7 @@
                   </div>
                 {% endif %}
               </div>
-            </div>
+            </div> {% endcomment %}
             <!-- Amount Field -->
             <div class="col-md-4">
               <div class="form-group {% if form.amount.errors %}has-error{% endif %}">
@@ -303,6 +303,8 @@
       </form>
     </div>
   </div>
+
+  {% include "model_forms/customer.html" %}
   
 {% endblock content %}
 {% block extra_js %}
@@ -314,6 +316,15 @@
          width: '100%'
        });
     });
+   </script>
+
+   <script src="{% static 'js/modelSetup.js' %}"></script>
+   <script>
+     
+     // Wait for DOM to be fully loaded
+     $(document).ready(function() {       
+       setupModal('id_customer', 'Customer', 'new_customer', '#add_new_customer', '{% url "customer:create_ajax" %}');
+       });
    </script>
 
    <script>

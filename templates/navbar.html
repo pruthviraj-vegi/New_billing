@@ -63,12 +63,12 @@
         <div class="dropdown-divider"></div>
         <a href="{% url 'inventory:category_home' %}"
            class="dropdown-item {% if request.resolver_match.url_name == 'category_home' %}active{% endif %}">Categories</a>
-        <a href="{% url 'inventory:color_home' %}"
-           class="dropdown-item {% if request.resolver_match.url_name == 'color_home' %}active{% endif %}">Colors</a>
+        {% comment %} <a href="{% url 'inventory:color_home' %}"
+           class="dropdown-item {% if request.resolver_match.url_name == 'color_home' %}active{% endif %}">Colors</a> {% endcomment %}
         <a href="{% url 'inventory:size_home' %}"
            class="dropdown-item {% if request.resolver_match.url_name == 'size_home' %}active{% endif %}">Sizes</a>
-        <a href="{% url 'inventory:cloth_home' %}"
-           class="dropdown-item {% if request.resolver_match.url_name == 'cloth_home' %}active{% endif %}">Cloth Types</a>
+        {% comment %} <a href="{% url 'inventory:cloth_home' %}"
+           class="dropdown-item {% if request.resolver_match.url_name == 'cloth_home' %}active{% endif %}">Cloth Types</a> {% endcomment %}
         <a href="{% url 'inventory:uom_home' %}"
            class="dropdown-item {% if request.resolver_match.url_name == 'uom_home' %}active{% endif %}">UOMs</a>
         <a href="{% url 'inventory:gst_hsn_home' %}"
@@ -99,7 +99,7 @@
         <a href="{% url 'supplier:home' %}"
            class="dropdown-item {% if request.resolver_match.url_name == 'home' %}active{% endif %}">Supplier List</a>
         <a href="{% url 'supplier:create' %}" class="dropdown-item">Add Supplier</a>
-        <a href="#" class="dropdown-item">Purchase Orders</a>
+        {% comment %} <a href="#" class="dropdown-item">Purchase Orders</a> {% endcomment %}
       </div>
     </li>
     <li class="nav-item">
@@ -131,8 +131,8 @@
            class="dropdown-item {% if request.resolver_match.url_name == 'shop_details_list' %}active{% endif %}">Shop Details</a>
         <a href="{% url 'setting:report_config_list' %}"
            class="dropdown-item {% if request.resolver_match.url_name == 'report_config_list' %}active{% endif %}">Report Configs</a>
-        <a href="#" class="dropdown-item">General Settings</a>
-        <a href="#" class="dropdown-item">System Preferences</a>
+        {% comment %} <a href="#" class="dropdown-item">General Settings</a>
+        <a href="#" class="dropdown-item">System Preferences</a> {% endcomment %}
       </div>
     </li>
   </ul>

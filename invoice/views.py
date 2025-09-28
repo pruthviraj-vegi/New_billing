@@ -17,6 +17,7 @@ from django.template.loader import render_to_string
 import json
 from django.core.exceptions import ValidationError
 import logging
+from customer.forms import CustomerForm
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,12 @@ class CreateInvoice(View):
                 "due_date": timezone.now() + timedelta(days=30),
             }
         )
-        context = {"cart": cart, "form": form, "title": "Create Invoice"}
+        context = {
+            "cart": cart,
+            "form": form,
+            "title": "Create Invoice",
+            "customer_form": CustomerForm(),
+        }
         return render(request, self.template_name, context)
 
     def post(self, request, pk):
@@ -172,6 +178,7 @@ class CreateInvoice(View):
                 invoice.cart_no = cart.id
                 invoice.amount = cart.total_amount
                 invoice.modified_by = request.user
+                invoice.created_by = request.user
 
                 invoice.save()
 

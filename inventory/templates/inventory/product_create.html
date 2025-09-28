@@ -121,7 +121,7 @@
                 {% endif %}
               </div>
             </div>
-            <div class="col-md-6">
+            {% comment %} <div class="col-md-6">
               <div class="form-group {% if product_form.cloth_type.errors %}has-error{% endif %}">
                 <label for="{{ product_form.cloth_type.id_for_label }}" class="form-label">{{ product_form.cloth_type.label }}</label>
                 <div class="input-group">
@@ -139,7 +139,7 @@
                   </div>
                 {% endif %}
               </div>
-            </div>
+            </div> {% endcomment %}
           </div>
           <!-- Row 3: HSN Code and GST Percentage -->
           <div class="row">
@@ -204,7 +204,7 @@
                 {% endif %}
               </div>
             </div>
-            <div class="col-md-6">
+            {% comment %} <div class="col-md-6">
               <div class="form-group {% if variant_form.color.errors %}has-error{% endif %}">
                 <label for="{{ variant_form.color.id_for_label }}" class="form-label">{{ variant_form.color.label }}</label>
                 <div class="input-group">
@@ -222,7 +222,7 @@
                   </div>
                 {% endif %}
               </div>
-            </div>
+            </div> {% endcomment %}
           </div>
           <!-- Row 2: Quantity and Minimum Quantity -->
           <div class="row">

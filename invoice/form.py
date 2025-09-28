@@ -10,7 +10,6 @@ class InvoiceForm(forms.ModelForm):
         model = Invoice
         fields = [
             "customer",
-            "created_by",
             "amount",
             "discount_amount",
             "payment_type",
@@ -24,7 +23,6 @@ class InvoiceForm(forms.ModelForm):
             "customer": forms.Select(
                 attrs={"class": "form-select", "placeholder": "Select customer"}
             ),
-            "created_by": forms.Select(attrs={"class": "form-select"}),
             "payment_type": forms.Select(attrs={"class": "form-select"}),
             "amount": forms.NumberInput(
                 attrs={
@@ -149,39 +147,46 @@ class InvoiceForm(forms.ModelForm):
 
 class AuditTableForm(forms.ModelForm):
     """Form for creating audit table sessions"""
-    
+
     class Meta:
         model = AuditTable
-        fields = ['title', 'description', 'audit_type', 'start_date', 'end_date', 'financial_year', 'status']
+        fields = [
+            "title",
+            "description",
+            "audit_type",
+            "start_date",
+            "end_date",
+            "financial_year",
+            "status",
+        ]
         widgets = {
-            'title': forms.TextInput(attrs={
-                'class': 'form-input',
-                'placeholder': 'Enter audit session title...'
-            }),
-            'description': forms.Textarea(attrs={
-                'class': 'form-textarea',
-                'placeholder': 'Describe the purpose of this audit session...',
-                'rows': 3
-            }),
-            'audit_type': forms.Select(attrs={'class': 'form-select'}),
-            'start_date': forms.DateInput(attrs={
-                'class': 'form-input',
-                'type': 'date'
-            }),
-            'end_date': forms.DateInput(attrs={
-                'class': 'form-input',
-                'type': 'date'
-            }),
-            'financial_year': forms.TextInput(attrs={
-                'class': 'form-input',
-                'placeholder': 'e.g., 24-25'
-            }),
-            'status': forms.Select(attrs={'class': 'form-select'}),
+            "title": forms.TextInput(
+                attrs={
+                    "class": "form-input",
+                    "placeholder": "Enter audit session title...",
+                }
+            ),
+            "description": forms.Textarea(
+                attrs={
+                    "class": "form-textarea",
+                    "placeholder": "Describe the purpose of this audit session...",
+                    "rows": 3,
+                }
+            ),
+            "audit_type": forms.Select(attrs={"class": "form-select"}),
+            "start_date": forms.DateInput(
+                attrs={"class": "form-input", "type": "date"}
+            ),
+            "end_date": forms.DateInput(attrs={"class": "form-input", "type": "date"}),
+            "financial_year": forms.TextInput(
+                attrs={"class": "form-input", "placeholder": "e.g., 24-25"}
+            ),
+            "status": forms.Select(attrs={"class": "form-select"}),
         }
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Add required field indicators
         for field_name, field in self.fields.items():
             if field.required:
@@ -190,63 +195,59 @@ class AuditTableForm(forms.ModelForm):
 
 class AuditFilterForm(forms.Form):
     """Form for filtering audit trail records"""
-    
+
     # Search field
     search = forms.CharField(
         required=False,
-        widget=forms.TextInput(attrs={
-            'class': 'form-input',
-            'placeholder': 'Search by invoice number, reason, or user name...'
-        })
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-input",
+                "placeholder": "Search by invoice number, reason, or user name...",
+            }
+        ),
     )
-    
+
     # Date range fields
     start_date = forms.DateField(
         required=False,
-        widget=forms.DateInput(attrs={
-            'class': 'form-input',
-            'type': 'date'
-        })
+        widget=forms.DateInput(attrs={"class": "form-input", "type": "date"}),
     )
-    
+
     end_date = forms.DateField(
         required=False,
-        widget=forms.DateInput(attrs={
-            'class': 'form-input',
-            'type': 'date'
-        })
+        widget=forms.DateInput(attrs={"class": "form-input", "type": "date"}),
     )
-    
+
     # Filter fields
     financial_year = forms.ChoiceField(
         required=False,
-        choices=[('', 'All Financial Years')],
-        widget=forms.Select(attrs={'class': 'form-select'})
+        choices=[("", "All Financial Years")],
+        widget=forms.Select(attrs={"class": "form-select"}),
     )
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Populate financial year choices dynamically
         current_year = timezone.now().year
-        fy_choices = [('', 'All Financial Years')]
-        
+        fy_choices = [("", "All Financial Years")]
+
         # Add current and previous financial years
         for year in range(current_year - 2, current_year + 1):
             fy_choices.append((str(year), str(year)))
-        
-        self.fields['financial_year'].choices = fy_choices
-        
+
+        self.fields["financial_year"].choices = fy_choices
+
         # Populate changed_by queryset with users who have made audit records
         audit_users = CustomUser.objects.filter(
-            id__in=InvoiceAudit.objects.values_list('changed_by', flat=True).distinct()
-        ).order_by('full_name')
-        self.fields['changed_by'].queryset = audit_users
+            id__in=InvoiceAudit.objects.values_list("changed_by", flat=True).distinct()
+        ).order_by("full_name")
+        self.fields["changed_by"].queryset = audit_users
 
 
 class ReturnInvoiceForm(forms.ModelForm):
     """Form for creating return invoices"""
-    
+
     class Meta:
         model = ReturnInvoice
         fields = [
@@ -313,37 +314,37 @@ class ReturnInvoiceForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Add required field indicators
         for field_name, field in self.fields.items():
             if field.required:
                 field.label = f"{field.label} *"
-        
+
         # Set default values
-        self.fields['status'].initial = ReturnInvoice.RefundStatus.PENDING
-        self.fields['refund_type'].initial = ReturnInvoice.RefundType.CASH_REFUND
-        self.fields['reason'].initial = ReturnInvoice.RefundReason.CUSTOMER_REQUEST
-        self.fields['return_date'].initial = timezone.now()
-        
+        self.fields["status"].initial = ReturnInvoice.RefundStatus.PENDING
+        self.fields["refund_type"].initial = ReturnInvoice.RefundType.CASH_REFUND
+        self.fields["reason"].initial = ReturnInvoice.RefundReason.CUSTOMER_REQUEST
+        self.fields["return_date"].initial = timezone.now()
+
         # Make some fields not required
-        self.fields['restocking_fee'].required = False
-        self.fields['notes'].required = False
-        self.fields['internal_notes'].required = False
+        self.fields["restocking_fee"].required = False
+        self.fields["notes"].required = False
+        self.fields["internal_notes"].required = False
 
     def clean(self):
         cleaned_data = super().clean()
         total_amount = cleaned_data.get("total_amount")
         refund_amount = cleaned_data.get("refund_amount")
         restocking_fee = cleaned_data.get("restocking_fee")
-        
+
         # Handle empty fields by setting them to 0
         if restocking_fee is None or restocking_fee == "":
             cleaned_data["restocking_fee"] = 0
-            
+
         # Validate refund amount doesn't exceed total amount
         if total_amount and refund_amount and refund_amount > total_amount:
             raise forms.ValidationError("Refund amount cannot exceed total amount")
-            
+
         return cleaned_data
 
     def clean_total_amount(self):
@@ -376,5 +377,3 @@ class ReturnInvoiceForm(forms.ModelForm):
         if commit:
             instance.save()
         return instance
-
-        
