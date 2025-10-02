@@ -46,7 +46,7 @@
   <!-- Product Form -->
   <div class="form-container">
     <div class="form-card">
-      <form method="post" class="details-form" novalidate autocomplete="off">
+      <form method="#" class="details-form" novalidate autocomplete="off">
         {% csrf_token %}
         <!-- Form Errors -->
         {% if form.non_field_errors %}
@@ -229,21 +229,44 @@
 {% endblock content %}
 <!-- Simple Modal System (20 lines total!) -->
 {% block extra_js %}
-<script src="{% static 'js/modelSetup.js' %}"></script>
-<script>
-  
-  // Wait for DOM to be fully loaded
-  $(document).ready(function() {
+  <script src="{% static 'js/modelSetup.js' %}"></script>
+  <script src="{% static 'js/wordSuggestion.js' %}"></script>
 
-    $('#id_category, #id_cloth_type, #id_uom, #id_hsn_code').select2({
-      placeholder: "Type to search...",
-      allowClear: true
-    });
+  <script>
+    const urls = {
+      suggestions: '{% url "suggestions:product_all" %}'
+    }
     
-    setupModal('id_category', 'Category', 'new_category', '#add_new_category', '{% url "inventory:category_create_ajax" %}');
-    setupModal('id_cloth_type', 'Cloth Type', 'new_cloth_type', '#add_new_cloth_type', '{% url "inventory:cloth_create_ajax" %}');
-    setupModal('id_uom', 'UOM', 'new_uom', '#add_new_uom', '{% url "inventory:uom_create_ajax" %}');
-    setupModal('id_hsn_code', 'HSN Code', 'new_hsn_code', '#add_new_hsn_code', '{% url "inventory:gst_hsn_create_ajax" %}');
-  });
-</script>
+    // Wait for DOM to be fully loaded
+    $(document).ready(function() {
+      
+      // Initialize Select2 fields
+      $('#id_uom, #id_hsn_code').select2({
+        placeholder: "Type to search...",
+        allowClear: true
+      });
+      
+      // Initialize category separately (sometimes needs different timing)
+      setTimeout(function() {
+        $('#id_category').select2({
+          placeholder: "Type to search...",
+          allowClear: true
+        });
+      }, 100);
+      
+      setupModal('id_category', 'Category', 'new_category', '#add_new_category', '{% url "inventory:category_create_ajax" %}');
+      {% comment %} setupModal('id_cloth_type', 'Cloth Type', 'new_cloth_type', '#add_new_cloth_type', '{% url "inventory:cloth_create_ajax" %}'); {% endcomment %}
+      setupModal('id_uom', 'UOM', 'new_uom', '#add_new_uom', '{% url "inventory:uom_create_ajax" %}');
+      setupModal('id_hsn_code', 'HSN Code', 'new_hsn_code', '#add_new_hsn_code', '{% url "inventory:gst_hsn_create_ajax" %}');
+
+      // Now you can use jQuery-like syntax!
+      $('#id_brand').wordSuggestion({
+        url: urls.suggestions
+      });
+
+      $('#id_name').wordSuggestion({
+        url: urls.suggestions
+      });
+    });
+  </script>
 {% endblock extra_js %}

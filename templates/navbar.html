@@ -33,6 +33,8 @@
         <span>Invoices</span>
       </a>
       <div class="dropdown-menu">
+        <a href="{% url 'invoice:dashboard' %}"
+           class="dropdown-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a>
         <a href="{% url 'invoice:home' %}"
            class="dropdown-item {% if request.resolver_match.url_name == 'home' %}active{% endif %}">All Invoices</a>
          <div class="dropdown-divider"></div>

@@ -74,15 +74,9 @@
                         <hr class="dropdown-divider">
                     </li>
                     <li>
-                        <a class="dropdown-item" href="#" id="printCartBtn">
+                        <a class="dropdown-item" href="{% url 'report:estimate_pdf' cart.id %}" target="_blank">
                             <i class="fas fa-print"></i>
-                            Print Cart
-                        </a>
-                    </li>
-                    <li>
-                        <a class="dropdown-item" href="#" id="exportCartBtn">
-                            <i class="fas fa-download"></i>
-                            Export Cart
+                            Print Estimate
                         </a>
                     </li>
                 </ul>

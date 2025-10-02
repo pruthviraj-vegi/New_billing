@@ -127,6 +127,7 @@ class ReportConfiguration(models.Model):
     class PaperSize(models.TextChoices):
         A4 = "A4", "A4"
         A5 = "A5", "A5"
+        _58mm = "58mm", "58mm"
         LETTER = "LETTER", "Letter"
         LEGAL = "LEGAL", "Legal"
 

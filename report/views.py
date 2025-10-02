@@ -13,6 +13,7 @@ from PIL import Image
 from inventory.models import ProductVariant
 from invoice.models import Invoice, InvoiceItem
 from setting.models import ShopDetails, ReportConfiguration
+from cart.models import Cart, CartItem
 
 Barcode.default_writer_options["write_text"] = False
 
@@ -54,7 +55,7 @@ def generatePdf(template_name, file_name, context, request, report_type="INVOICE
 
 # create invoice page
 def createInvoice(request, pk):
-    template = "report/A5.html"
+    template = None
 
     invoice = Invoice.objects.select_related("customer", "created_by").get(id=pk)
     values = (
@@ -73,6 +74,11 @@ def createInvoice(request, pk):
     report_config = ReportConfiguration.get_default_config(
         ReportConfiguration.ReportType.INVOICE
     )
+
+    if report_config.paper_size == ReportConfiguration.PaperSize._58mm:
+        template = "report/58mm.html"
+    else:
+        template = "report/A5.html"
 
     context = {
         "values": values,
@@ -93,6 +99,23 @@ def createInvoice(request, pk):
         except Exception as e:
             logger.error(f"Error generating QR code: {e}")
 
+    return render(request, template, context)
+
+
+def estimate_invoice(request, pk):
+    template = "report/estimate.html"
+    estimate = Cart.objects.get(id=pk)
+    values = CartItem.objects.filter(cart__id=pk)
+    shop_details = ShopDetails.objects.filter(is_active=True).first()
+    report_config = ReportConfiguration.get_default_config(
+        ReportConfiguration.ReportType.ESTIMATE
+    )
+    context = {
+        "values": values,
+        "details": estimate,
+        "shop_details": shop_details,
+        "report_config": report_config,
+    }
     return render(request, template, context)
 
 

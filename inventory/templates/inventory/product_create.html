@@ -379,27 +379,38 @@
 
 <!-- Simple Modal System -->
 {% block extra_js %}
-<script src="{% static 'js/modelSetup.js' %}"></script>
-<script>
-  
-  // Wait for DOM to be fully loaded
-  $(document).ready(function() {
-    
-    setupModal('id_category', 'Category', 'new_category', '#add_new_category', '{% url "inventory:category_create_ajax" %}');
-    setupModal('id_cloth_type', 'Cloth Type', 'new_cloth_type', '#add_new_cloth_type', '{% url "inventory:cloth_create_ajax" %}');
-    setupModal('id_uom', 'UOM', 'new_uom', '#add_new_uom', '{% url "inventory:uom_create_ajax" %}');
-    setupModal('id_hsn_code', 'HSN Code', 'new_hsn_code', '#add_new_hsn_code', '{% url "inventory:gst_hsn_create_ajax" %}');
-    setupModal('id_size', 'Size', 'new_size', '#add_new_size', '{% url "inventory:size_create_ajax" %}');
-    setupModal('id_color', 'Color', 'new_color', '#add_new_color', '{% url "inventory:color_create_ajax" %}');
+  <script src="{% static 'js/modelSetup.js' %}"></script>
+  <script src="{% static 'js/wordSuggestion.js' %}"></script>
+  <script>
+    const urls = {
+      suggestions: '{% url "suggestions:product_all" %}'
+    }
 
-    // Initialize select2 for dropdowns
-    $('#id_size, #id_color, #id_supplier_invoice, #id_category, #id_cloth_type, #id_uom, #id_hsn_code').select2({
-      placeholder: "Type to search...",
-      allowClear: true
+    // Wait for DOM to be fully loaded
+    $(document).ready(function() {
+      
+      setupModal('id_category', 'Category', 'new_category', '#add_new_category', '{% url "inventory:category_create_ajax" %}');
+      {% comment %} setupModal('id_cloth_type', 'Cloth Type', 'new_cloth_type', '#add_new_cloth_type', '{% url "inventory:cloth_create_ajax" %}'); {% endcomment %}
+      setupModal('id_uom', 'UOM', 'new_uom', '#add_new_uom', '{% url "inventory:uom_create_ajax" %}');
+      setupModal('id_hsn_code', 'HSN Code', 'new_hsn_code', '#add_new_hsn_code', '{% url "inventory:gst_hsn_create_ajax" %}');
+      setupModal('id_size', 'Size', 'new_size', '#add_new_size', '{% url "inventory:size_create_ajax" %}');
+      {% comment %} setupModal('id_color', 'Color', 'new_color', '#add_new_color', '{% url "inventory:color_create_ajax" %}'); {% endcomment %}
+
+      // Initialize select2 for dropdowns
+      $('#id_size,  #id_supplier_invoice, #id_category, #id_uom, #id_hsn_code').select2({
+        placeholder: "Type to search...",
+        allowClear: true
+      });
+
+      $('#id_brand').wordSuggestion({
+        url: urls.suggestions
+      });
+
+      $('#id_name').wordSuggestion({
+        url: urls.suggestions
+      });
     });
-    
-  });
-</script>
+  </script>
 
   <script>
     // Real-time calculations

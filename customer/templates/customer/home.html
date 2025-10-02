@@ -25,89 +25,82 @@
         <span class="breadcrumb-separator">/</span>
         <span class="breadcrumb-active">All Customers</span>
     </nav>
-    <!-- Unified Table Component -->
-    <div class="unified-table-container" 
-         data-fetch-url="{% url 'customer:fetch' %}" 
-         data-suggestion-url="{% url 'suggestions:customer_all' %}">
-        
-        <!-- Search and Filter Section -->
-        <div class="search-filter-section">
-            <form method="get" class="search-filter-form" id="searchForm">
-                <div class="search-group search-expanded">
-                    <i class="fas fa-search search-icon"></i>
-                    <div class="search-input-container">
-                        <div class="word-suggestion-container">
-                            <input type="search"
-                                name="search"
-                                class="search-input word-suggestion-input"
-                                placeholder="Search customers by name, phone, email, or address..."
-                                value=""
-                                id="searchInput"
-                                autocomplete="off"
-                                autofocus>
-                        </div>
-                    </div>
+     
+    <!-- Search and Filter Section -->
+    <div class="search-filter-section">
+        <form method="#" class="search-filter-form" id="searchForm" autocomplete="off">
+            <div class="search-group search-expanded">
+                <i class="fas fa-search search-icon"></i>
+                <div class="search-input-container">
+                    <input type="search"
+                        name="search"
+                        class="search-input"
+                        placeholder="Search customers by name, phone, email, or address..."
+                        value=""
+                        id="searchInput"
+                        autofocus>
                 </div>
-                <select name="status" class="filter-select" id="statusFilter">
-                    <option value="">All Status</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                </select>
-                
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-search"></i>
-                    Search
-                </button>
-            </form>
-        </div>
-        
-        <!-- Filter Tags Display -->
-        <div id="filterTagsInline" class="filter-tags-container">
-            <!-- Filter tags will be dynamically added here -->
-        </div>
-        
-        <!-- Data Table -->
-        <div class="table-container">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th class="sortable" data-sort="id">ID</th>
-                        <th class="sortable" data-sort="name">Name</th>
-                        <th class="sortable" data-sort="email">Email</th>
-                        <th class="sortable" data-sort="phone_number">Phone No</th>
-                        <th class="sortable" data-sort="address">Address</th>
-                        <th>Status</th>
-                        <th class="sortable" data-sort="created_at">Created</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="table_body">
-                    <!-- Empty table body - data will be loaded via AJAX -->
-                    <tr>
-                        <td colspan="8" class="text-center" style="padding: 2rem;">
-                            <div class="loading">
-                                <i class="fas fa-spinner fa-spin"></i>
-                                Loading customers...
-                            </div>
-                            <br><br>
-                            <button type="button" class="btn btn-sm" onclick="document.dispatchEvent(new Event('reloadTable'))">
-                                <i class="fas fa-refresh"></i>
-                                Retry
-                            </button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-        
-        <!-- Pagination Wrapper -->
-        <div class="pagination-wrapper" id="pagination_wrapper">
-            <!-- Pagination will be loaded here via AJAX -->
-        </div>
+            </div>
+            <select name="status" class="filter-select" id="statusFilter">
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+            </select>
+            
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-search"></i>
+                Search
+            </button>
+        </form>
     </div>
+    
+    <!-- Filter Tags Display -->
+    <div id="filterTagsInline" class="filter-tags-container">
+        <!-- Filter tags will be dynamically added here -->
+    </div>
+    
+    <!-- Data Table -->
+    <div class="table-container">
+        <table class="data-table" id="data_table">
+            <thead>
+                <tr>
+                    <th class="sortable" data-sort="id">ID</th>
+                    <th class="sortable" data-sort="name">Name</th>
+                    <th class="sortable" data-sort="email">Email</th>
+                    <th class="sortable" data-sort="phone_number">Phone No</th>
+                    <th class="sortable" data-sort="address">Address</th>
+                    <th>Status</th>
+                    <th class="sortable" data-sort="created_at">Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="table_body">
+                <!-- Empty table body - data will be loaded via AJAX -->
+                <tr>
+                    <td colspan="8" class="text-center" style="padding: 2rem;">
+                        <div class="loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            Loading customers...
+                        </div>
+                        <br><br>
+                        <button type="button" class="btn btn-sm" onclick="document.dispatchEvent(new Event('reloadTable'))">
+                            <i class="fas fa-refresh"></i>
+                            Retry
+                        </button>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Pagination Wrapper -->
+    <div class="pagination-wrapper" id="data_table_pagination">
+        <!-- Pagination will be loaded here via AJAX -->
+    </div>
+
 {% endblock content %}
 
-{% comment %} {% block extra_js %}
+{% block extra_js %}
 
     <script>
         urls = {
@@ -116,36 +109,32 @@
         }
     </script>
 
-    <!-- Load the simple table AJAX -->
-    <script src="{% static 'js/fetchAjax.js' %}"></script>
+    <!-- Load dependencies -->
+    <script src="{% static 'js/wordSuggestion.js' %}"></script>
+    <script src="{% static 'js/fetchData.js' %}"></script>
     
-    <!-- Load the filter tags manager -->
-    <script src="{% static 'js/filter-tags.js' %}"></script>
-    
-    <!-- Load the word suggestion system -->
-    <script src="{% static 'js/word-suggestion.js' %}"></script>
-
-    
-{% endblock extra_js %} {% endcomment %}
-
-
-
-{% block extra_js %}
-    <!-- Load the unified table component -->
-    <script src="{% static 'js/unified-table-component.js' %}"></script>
-
     <script>
-        // Optional: Manual initialization for custom control
-        document.addEventListener('DOMContentLoaded', () => {
-            const tableContainer = document.querySelector('.unified-table-container');
-            if (tableContainer) {
-                // The component auto-initializes, but you can access it for custom methods
-                console.log('Unified table component initialized automatically');
-                
-                // Example: Access the component for custom operations
-                // const tableComponent = tableContainer.unifiedTableComponent;
-                // tableComponent.reload(); // Manually reload if needed
-            }
+        // Simple, clean initialization - just like Select2!
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize word suggestion on search input - jQuery-like syntax!
+            $('#searchInput').wordSuggestion({
+                url: urls.suggestions,
+                placeholder: 'Type to search customers...',
+                minLength: 2,
+                onSelect: function(suggestion, input) {
+                    // Auto-reload table when suggestion is selected
+                    reloadTable('data_table');
+                }
+            });
+            
+            // Initialize table AJAX with sorting enabled - jQuery-like syntax!
+            $('#searchForm').ajax({
+                tableId: 'data_table',
+                url: urls.fetch,
+                placeholder: 'Loading customers...',
+            });
         });
     </script>
+            
+    
 {% endblock extra_js %}

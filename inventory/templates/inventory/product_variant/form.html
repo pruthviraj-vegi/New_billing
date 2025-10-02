@@ -329,78 +329,78 @@
 {% endblock content %}
 <!-- Simple Modal System -->
 {% block extra_js %}
-<script src="{% static 'js/modelSetup.js' %}"></script>
-<script>
-  
-  // Wait for DOM to be fully loaded
-  $(document).ready(function() {
+  <script src="{% static 'js/modelSetup.js' %}"></script>
+  <script src="{% static 'js/wordSuggestion.js' %}"></script>
+  <script>
     
-    setupModal('id_size', 'Size', 'new_size', '#add_new_size', '{% url "inventory:size_create_ajax" %}');
-    setupModal('id_color', 'Color', 'new_color', '#add_new_color', '{% url "inventory:color_create_ajax" %}');
-    
-    // Initialize select2 for dropdowns
-    $('#id_size, #id_color, #id_supplier_invoice').select2({
-      placeholder: "Type to search...",
-      width: '100%',
-      allowClear: true
+    // Wait for DOM to be fully loaded
+    $(document).ready(function() {
+      
+      setupModal('id_size', 'Size', 'new_size', '#add_new_size', '{% url "inventory:size_create_ajax" %}');
+      {% comment %} setupModal('id_color', 'Color', 'new_color', '#add_new_color', '{% url "inventory:color_create_ajax" %}'); {% endcomment %}
+      
+      // Initialize select2 for dropdowns
+      $('#id_size, #id_supplier_invoice').select2({
+        placeholder: "Type to search...",
+        allowClear: true
+      });
+      
     });
+  </script>
+
+  <script>
+    // Real-time calculations
+    document.addEventListener('DOMContentLoaded', function () {
+      const purchasePrice = document.getElementById('{{ form.purchase_price.id_for_label }}')
+      const sellingPrice = document.getElementById('{{ form.mrp.id_for_label }}')
+      const quantity = document.getElementById('{{ form.quantity.id_for_label }}')
+      const discountPercentage = document.getElementById('{{ form.discount_percentage.id_for_label }}')
+      const gstPercentage = '{{ gst_rate }}' || 5
     
-  });
-</script>
-
-<script>
-  // Real-time calculations
-  document.addEventListener('DOMContentLoaded', function () {
-    const purchasePrice = document.getElementById('{{ form.purchase_price.id_for_label }}')
-    const sellingPrice = document.getElementById('{{ form.mrp.id_for_label }}')
-    const quantity = document.getElementById('{{ form.quantity.id_for_label }}')
-    const discountPercentage = document.getElementById('{{ form.discount_percentage.id_for_label }}')
-    const gstPercentage = '{{ gst_rate }}' || 5
-  
-    function updateCalculations() {
-      const purchase = parseFloat(purchasePrice?.value) || 0
-      const selling = parseFloat(sellingPrice?.value) || 0
-      const qty = parseFloat(quantity?.value) || 0
-      const discount = parseFloat(discountPercentage?.value) || 0
-      const gst = parseFloat(gstPercentage) || 0
-  
-      // Calculate GST amount
-      const gstAmount = purchase * (gst / 100)
-      document.getElementById('gst-amount-display').textContent = `₹${gstAmount.toFixed(2)}`
-  
-      // Calculate purchase price with GST
-      const purchaseWithGST = purchase + gstAmount
-      document.getElementById('purchase-with-gst-display').textContent = `₹${purchaseWithGST.toFixed(2)}`
-  
-      // Calculate after discount (final selling price)
-      const discountAmount = selling * (discount / 100)
-      const afterDiscount = selling - discountAmount
-      document.getElementById('after-discount').textContent = `₹${afterDiscount.toFixed(2)}`
-  
-      // Calculate profit margin percentage - based on final selling price vs purchase price with GST
-      const profitMargin = afterDiscount - purchaseWithGST
-      const profitMarginPercentage = purchaseWithGST > 0 ? (profitMargin / purchaseWithGST) * 100 : 0
-      document.getElementById('profit-margin-percentage').textContent = `${profitMarginPercentage.toFixed(2)}%`
-  
-      // Calculate total value (purchase price × quantity)
-      const totalValue = purchase * qty
-      document.getElementById('total-value').textContent = `₹${totalValue.toFixed(2)}`
-  
-      // Calculate final price (after discount)
-      const finalPrice = afterDiscount
-      document.getElementById('final-price').textContent = `₹${finalPrice.toFixed(2)}`
-    };
-  
-    // Add event listeners
-    [purchasePrice, sellingPrice, quantity, discountPercentage].forEach((input) => {
-      if (input) {
-        input.addEventListener('input', updateCalculations)
-      }
+      function updateCalculations() {
+        const purchase = parseFloat(purchasePrice?.value) || 0
+        const selling = parseFloat(sellingPrice?.value) || 0
+        const qty = parseFloat(quantity?.value) || 0
+        const discount = parseFloat(discountPercentage?.value) || 0
+        const gst = parseFloat(gstPercentage) || 0
+    
+        // Calculate GST amount
+        const gstAmount = purchase * (gst / 100)
+        document.getElementById('gst-amount-display').textContent = `₹${gstAmount.toFixed(2)}`
+    
+        // Calculate purchase price with GST
+        const purchaseWithGST = purchase + gstAmount
+        document.getElementById('purchase-with-gst-display').textContent = `₹${purchaseWithGST.toFixed(2)}`
+    
+        // Calculate after discount (final selling price)
+        const discountAmount = selling * (discount / 100)
+        const afterDiscount = selling - discountAmount
+        document.getElementById('after-discount').textContent = `₹${afterDiscount.toFixed(2)}`
+    
+        // Calculate profit margin percentage - based on final selling price vs purchase price with GST
+        const profitMargin = afterDiscount - purchaseWithGST
+        const profitMarginPercentage = purchaseWithGST > 0 ? (profitMargin / purchaseWithGST) * 100 : 0
+        document.getElementById('profit-margin-percentage').textContent = `${profitMarginPercentage.toFixed(2)}%`
+    
+        // Calculate total value (purchase price × quantity)
+        const totalValue = purchase * qty
+        document.getElementById('total-value').textContent = `₹${totalValue.toFixed(2)}`
+    
+        // Calculate final price (after discount)
+        const finalPrice = afterDiscount
+        document.getElementById('final-price').textContent = `₹${finalPrice.toFixed(2)}`
+      };
+    
+      // Add event listeners
+      [purchasePrice, sellingPrice, quantity, discountPercentage].forEach((input) => {
+        if (input) {
+          input.addEventListener('input', updateCalculations)
+        }
+      })
+    
+      // Initial calculation
+      updateCalculations()
     })
-  
-    // Initial calculation
-    updateCalculations()
-  })
 
-</script>
+  </script>
 {% endblock extra_js %}

@@ -6,85 +6,105 @@ from django.http import JsonResponse
 from customer.models import Customer
 from invoice.models import Invoice
 from inventory.models import Product, ProductVariant
+from rapidfuzz import process
 
 
 # Precompiled regex for speed
 TOKENIZER = re.compile(r"[a-zA-Z0-9]+")
 
 
-def get_related_words(query, list_of_words):
+def get_related_words(query, list_of_words, limit=10, score_cutoff=60):
+    """
+    Returns top fuzzy-matched words for a query.
+    - Uses rapidfuzz for speed.
+    - Avoids redundant deduplication.
+    - Limits results early for efficiency.
+    """
+
     if not query or len(query) < 2 or not list_of_words:
         return []
 
-    if not isinstance(list_of_words, list):
-        return []
+    # rapidfuzz can handle iterables directly (no need to force list)
+    matches = process.extract(
+        query.lower(), list_of_words, limit=limit, score_cutoff=score_cutoff
+    )
 
-    list_of_words = list(set(list_of_words))
+    # Extract only words (discard scores)
+    return [word for word, score, _ in matches]
 
-    fuzzy_matches = process.extract(query.lower(), list_of_words, limit=10)
 
-    # Filter matches with score > 60 and return only words
-    suggestions = []
-    seen_words = set()
-    for word, score in fuzzy_matches:
-        if score > 60 and word not in seen_words:
-            suggestions.append(word)
-            seen_words.add(word)
-            if len(suggestions) >= 5:
-                break
+# def get_related_words(query, list_of_words):
+#     if not query or len(query) < 2 or not list_of_words:
+#         return []
 
-    return suggestions
+#     if not isinstance(list_of_words, list):
+#         return []
+
+#     list_of_words = list(set(list_of_words))
+
+#     fuzzy_matches = process.extract(query.lower(), list_of_words, limit=10)
+
+#     # Filter matches with score > 60 and return only words
+#     suggestions = []
+#     seen_words = set()
+#     for word, score in fuzzy_matches:
+#         if score > 60 and word not in seen_words:
+#             suggestions.append(word)
+#             seen_words.add(word)
+#             if len(suggestions) >= 5:
+#                 break
+
+#     return suggestions
 
 
 def get_search_words(
-    query, model, fields, cache_key, cache_timeout=3600, use_file_cache=False
+    query,
+    model,
+    fields,
+    cache_key,
+    cache_timeout=3600,
+    max_words=50000,
 ):
     """
-    Generic helper to build/search word lists from any model fields.
-    Uses Django cache with optional file-based fallback.
-    Returns a list of unique lowercase words (up to max_words).
+    Optimized helper to build/search word lists from model fields.
+    - Uses cache to avoid rebuilding.
+    - Minimizes memory overhead by streaming.
+    - Tokenizes with set comprehension instead of nested loops.
+    - Limits max_words to avoid huge cache payloads.
     """
-    # File path (if enabled)
-    cache_file = None
-    if use_file_cache:
-        cache_dir = os.path.join(settings.BASE_DIR, "cache_files")
-        os.makedirs(cache_dir, exist_ok=True)
-        cache_file = os.path.join(cache_dir, f"{cache_key}.json")
 
-    # Try Django cache first
+    # 1. Try cache first
     searchable_items = cache.get(cache_key)
     if searchable_items is not None:
         return get_related_words(query, searchable_items)
 
-    # Try file cache fallback
-    if cache_file and os.path.exists(cache_file):
-        with open(cache_file, "r", encoding="utf-8") as f:
-            searchable_items = json.load(f)
-    else:
-        # Build from DB
-        queryset = model.objects.values_list(*fields).iterator()
-        all_words = set()
+    # 2. Stream from DB efficiently (iterator avoids full memory load)
+    queryset = model.objects.values_list(*fields).iterator()
 
-        for row in queryset:
-            for field in row:
-                if field:
-                    tokens = TOKENIZER.findall(str(field).lower())
-                    all_words.update(tokens)
+    all_words = set()
+    for row in queryset:
+        # Flatten row → tokenize in one go
+        tokens = {
+            token
+            for field in row
+            if field
+            for token in TOKENIZER.findall(str(field).lower())
+            if len(token) > 2
+        }
+        all_words.update(tokens)
 
-        # Trim to max_words
-        searchable_items = list(all_words)
+        # Optional: early cutoff if dataset is massive
+        if len(all_words) >= max_words:
+            break
 
-        # Save to file if enabled
-        if cache_file:
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(searchable_items, f)
-    # Save to Django cache
+    # 3. Convert to list once
+    searchable_items = list(all_words)
+
+    # 4. Save in cache
     cache.set(cache_key, searchable_items, cache_timeout)
 
-    suggestions = get_related_words(query, searchable_items)
-
-    # Return the suggestions list, not JsonResponse
-    return suggestions
+    # 5. Get suggestions
+    return get_related_words(query, searchable_items)
 
 
 def customer_all_suggestions(request):
@@ -99,7 +119,6 @@ def customer_all_suggestions(request):
         fields=("name", "phone_number", "email", "address"),
         cache_key="customer_search_words",
         cache_timeout=3600,
-        use_file_cache=True,
     )
 
     return JsonResponse({"success": True, "data": suggestions})
@@ -117,7 +136,6 @@ def invoice_all_suggestions(request):
         fields=("invoice_number", "customer__name", "customer__phone_number", "notes"),
         cache_key="invoice_search_words",
         cache_timeout=3600,
-        use_file_cache=True,
     )
 
     return JsonResponse({"success": True, "data": suggestions})
@@ -136,7 +154,6 @@ def product_all_suggestions(request):
         fields=("brand", "name", "category__name"),
         cache_key="product_search_words",
         cache_timeout=3600,
-        use_file_cache=True,
     )
 
     return JsonResponse({"success": True, "data": suggestions})
@@ -151,10 +168,14 @@ def product_variant_all_suggestions(request):
     suggestions = get_search_words(
         query=query,
         model=ProductVariant,
-        fields=("barcode", "product__name", "product__brand", "product__category__name"),
+        fields=(
+            "barcode",
+            "product__name",
+            "product__brand",
+            "product__category__name",
+        ),
         cache_key="product_variant_search_words",
         cache_timeout=3600,
-        use_file_cache=True,
     )
 
     return JsonResponse({"success": True, "data": suggestions})

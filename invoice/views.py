@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse
-from django.db.models import Q
+from django.db.models import Q, Sum, Count
 from django.contrib import messages
 from django.views import View
 from cart.models import Cart
@@ -11,13 +11,14 @@ from django.utils import timezone
 from django.db import transaction
 from django.core.paginator import Paginator
 from inventory.services import InventoryService
-from datetime import timedelta
+from datetime import timedelta, datetime, date
 from invoice.views_ import resequence_invoices
 from django.template.loader import render_to_string
 import json
 from django.core.exceptions import ValidationError
 import logging
 from customer.forms import CustomerForm
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -391,3 +392,264 @@ class InvoiceDownload(View):
     def get(self, request):
         resequence_invoices("24-25", request.user)
         return JsonResponse({"message": "Invoices resequenced successfully"})
+
+
+@login_required
+def invoice_dashboard(request):
+    """Invoice dashboard with date filtering and metrics"""
+
+    return render(request, "invoice/dashboard.html")
+
+
+@login_required
+def fetch_dashboard_data(request):
+    """AJAX endpoint to fetch dashboard data."""
+    # Get date filter from request
+    date_filter = request.GET.get("date_filter", "today")
+
+    # Calculate date ranges
+    now = timezone.now()
+    today = now.date()
+
+    if date_filter == "today":
+        start_date = today
+        end_date = today
+    elif date_filter == "yesterday":
+        yesterday = today - timedelta(days=1)
+        start_date = yesterday
+        end_date = yesterday
+    elif date_filter == "this_month":
+        start_date = today.replace(day=1)
+        end_date = today
+    elif date_filter == "last_month":
+        first_this_month = today.replace(day=1)
+        last_month = first_this_month - timedelta(days=1)
+        start_date = last_month.replace(day=1)
+        end_date = last_month
+    elif date_filter == "this_year":
+        start_date = today.replace(month=1, day=1)
+        end_date = today
+    else:
+        # Default to today
+        start_date = today
+        end_date = today
+
+    # Filter invoices by date range
+    invoices = Invoice.objects.filter(
+        invoice_date__date__range=[start_date, end_date]
+    ).select_related("customer")
+
+    # Calculate metrics
+    total_invoices = invoices.count()
+    total_amount = invoices.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    total_discount = invoices.aggregate(total=Sum("discount_amount"))[
+        "total"
+    ] or Decimal("0")
+    total_paid = invoices.aggregate(total=Sum("paid_amount"))["total"] or Decimal("0")
+
+    # Calculate profit from invoice items
+    invoice_items = InvoiceItem.objects.filter(
+        invoice__invoice_date__date__range=[start_date, end_date]
+    )
+
+    total_profit = Decimal("0")
+    for item in invoice_items:
+        profit_per_unit = item.unit_price - item.purchase_price
+        total_profit += profit_per_unit * item.quantity
+
+    # Calculate net amount (amount - discount)
+    net_amount = total_amount - total_discount
+
+    # Calculate outstanding amount (net amount - paid amount)
+    outstanding_amount = net_amount - total_paid
+
+    # Payment status breakdown
+    payment_status_breakdown = (
+        invoices.values("payment_status")
+        .annotate(count=Count("id"), amount=Sum("amount"))
+        .order_by("payment_status")
+    )
+
+    # Payment type breakdown
+    payment_type_breakdown = (
+        invoices.values("payment_type")
+        .annotate(count=Count("id"), amount=Sum("amount"))
+        .order_by("payment_type")
+    )
+
+    # Recent invoices (last 10)
+    recent_invoices = invoices.order_by("-invoice_date")[:10]
+
+    context = {
+        "date_filter": date_filter,
+        "start_date": start_date,
+        "end_date": end_date,
+        "total_invoices": total_invoices,
+        "total_amount": total_amount,
+        "total_discount": total_discount,
+        "total_paid": total_paid,
+        "net_amount": net_amount,
+        "outstanding_amount": outstanding_amount,
+        "total_profit": total_profit,
+        "payment_status_breakdown": payment_status_breakdown,
+        "payment_type_breakdown": payment_type_breakdown,
+        "recent_invoices": recent_invoices,
+        "date_filter_options": [
+            ("today", "Today"),
+            ("yesterday", "Yesterday"),
+            ("this_month", "This Month"),
+            ("last_month", "Last Month"),
+            ("this_year", "This Year"),
+        ],
+    }
+
+    return render(request, "invoice/dashboard.html", context)
+
+
+@login_required
+def invoice_dashboard_fetch(request):
+    """AJAX endpoint to fetch dashboard data"""
+
+    # Get date filter from request
+    date_filter = request.GET.get("date_filter", "today")
+
+    # Calculate date ranges
+    now = timezone.now()
+    today = now.date()
+
+    if date_filter == "today":
+        start_date = today
+        end_date = today
+    elif date_filter == "yesterday":
+        yesterday = today - timedelta(days=1)
+        start_date = yesterday
+        end_date = yesterday
+    elif date_filter == "this_month":
+        start_date = today.replace(day=1)
+        end_date = today
+    elif date_filter == "last_month":
+        first_this_month = today.replace(day=1)
+        last_month = first_this_month - timedelta(days=1)
+        start_date = last_month.replace(day=1)
+        end_date = last_month
+    elif date_filter == "this_year":
+        start_date = today.replace(month=1, day=1)
+        end_date = today
+    else:
+        # Default to today
+        start_date = today
+        end_date = today
+
+    # Filter invoices by date range
+    invoices = Invoice.objects.filter(
+        invoice_date__date__range=[start_date, end_date]
+    ).select_related("customer")
+
+    # Calculate metrics
+    total_invoices = invoices.count()
+    total_amount = invoices.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+    total_discount = invoices.aggregate(total=Sum("discount_amount"))[
+        "total"
+    ] or Decimal("0")
+    total_paid = invoices.aggregate(total=Sum("paid_amount"))["total"] or Decimal("0")
+
+    # Calculate profit from invoice items
+    invoice_items = InvoiceItem.objects.filter(
+        invoice__invoice_date__date__range=[start_date, end_date]
+    )
+
+    total_profit = Decimal("0")
+    for item in invoice_items:
+        profit_per_unit = item.unit_price - item.purchase_price
+        total_profit += profit_per_unit * item.quantity
+
+    # Calculate net amount (amount - discount)
+    net_amount = total_amount - total_discount
+
+    # Calculate outstanding amount (net amount - paid amount)
+    outstanding_amount = net_amount - total_paid
+
+    # Payment status breakdown
+    payment_status_breakdown = (
+        invoices.values("payment_status")
+        .annotate(count=Count("id"), amount=Sum("amount"))
+        .order_by("payment_status")
+    )
+
+    # Payment type breakdown
+    payment_type_breakdown = (
+        invoices.values("payment_type")
+        .annotate(count=Count("id"), amount=Sum("amount"))
+        .order_by("payment_type")
+    )
+
+    # Recent invoices (last 10)
+    recent_invoices = invoices.order_by("-invoice_date")[:10]
+
+    # Prepare response data
+    stats = {
+        "total_invoices": total_invoices,
+        "total_amount": float(total_amount),
+        "total_discount": float(total_discount),
+        "total_paid": float(total_paid),
+        "net_amount": float(net_amount),
+        "outstanding_amount": float(outstanding_amount),
+        "total_profit": float(total_profit),
+    }
+
+    # Add percentage calculations for breakdowns
+    payment_status_data = []
+    for status in payment_status_breakdown:
+        percentage = (
+            (status["count"] / total_invoices * 100) if total_invoices > 0 else 0
+        )
+        payment_status_data.append(
+            {
+                "payment_status": status["payment_status"].title(),
+                "count": status["count"],
+                "amount": float(status["amount"]),
+                "percentage": round(percentage, 1),
+            }
+        )
+
+    payment_type_data = []
+    for type_data in payment_type_breakdown:
+        percentage = (
+            (type_data["count"] / total_invoices * 100) if total_invoices > 0 else 0
+        )
+        payment_type_data.append(
+            {
+                "payment_type": type_data["payment_type"].title(),
+                "count": type_data["count"],
+                "amount": float(type_data["amount"]),
+                "percentage": round(percentage, 1),
+            }
+        )
+
+    # Recent invoices data
+    recent_invoices_data = []
+    for invoice in recent_invoices:
+        recent_invoices_data.append(
+            {
+                "id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "customer_name": invoice.customer.name,
+                "amount": float(invoice.amount),
+                "invoice_date": invoice.invoice_date.isoformat(),
+            }
+        )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "stats": stats,
+            "payment_status_breakdown": payment_status_data,
+            "payment_type_breakdown": payment_type_data,
+            "recent_invoices": recent_invoices_data,
+            "date_range": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "filter": date_filter,
+            },
+        }
+    )

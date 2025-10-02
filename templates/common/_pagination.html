@@ -1,4 +1,4 @@
-{% if page_obj and page_obj.paginator.num_pages > 1 %}
+{% if page_obj %}
         <div class="pagination-row">
             <div class="pagination-info">
                 <span class="page-info">
@@ -6,6 +6,7 @@
                 </span>
             </div>
             
+            {% if page_obj.paginator.num_pages > 1 %}
             <nav aria-label="Pagination" class="pagination-nav" class="flex:1">
                 <ul class="pagination">
                     {% if page_obj.has_previous %}
@@ -22,14 +23,14 @@
                     {% endif %}
 
                     {% for num in page_obj.paginator.page_range %}
-                        {% if page_obj.number == num %}
-                            <li class="page-item active">
-                                <span class="page-link">{{ num }}</span>
-                            </li>
-                        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                            <li class="page-item">
-                                <a class="page-link" data-page="{{ num }}">{{ num }}</a>
-                            </li>
+                        {% if num == page_obj.number %}
+                            <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                        {% elif num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
+                            <li class="page-item"><a class="page-link" data-page="{{ num }}">{{ num }}</a></li>
+                        {% elif num == 1 or num == page_obj.paginator.num_pages %}
+                            <li class="page-item"><a class="page-link" data-page="{{ num }}">{{ num }}</a></li>
+                        {% elif num == page_obj.number|add:'-3' or num == page_obj.number|add:'3' %}
+                            <li class="page-item disabled"><span class="page-link">…</span></li>
                         {% endif %}
                     {% endfor %}
 
@@ -47,8 +48,11 @@
                     {% endif %}
                 </ul>
             </nav>
+            {% endif %}
 
             <div class="pagination-info">
+                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                ({{ page_obj.paginator.num_pages }} Pages)
             </div>
 
         </div>
