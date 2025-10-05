@@ -34,9 +34,9 @@ async function loadTableDataWithPage(formId, tableId, fetchUrl, options = {}, pa
     const form = document.getElementById(formId);
     const table = document.getElementById(tableId);
 
-    if (! form || ! table || !fetchUrl) 
+    if (!form || !table || !fetchUrl)
         return false;
-    
+
 
 
     const tableBody = table.querySelector("tbody");
@@ -64,11 +64,7 @@ async function loadTableDataWithPage(formId, tableId, fetchUrl, options = {}, pa
         const tableElement = document.getElementById(tableId);
         if (tableElement && tableElement.dataset.sort) {
             params.append('sort', tableElement.dataset.sort);
-            console.log('Sort parameter added:', tableElement.dataset.sort);
-        } else {
-            console.log('No sort parameter found for table:', tableId);
         }
-
         // Add page parameter
         params.append('page', page);
 
@@ -85,30 +81,28 @@ async function loadTableDataWithPage(formId, tableId, fetchUrl, options = {}, pa
             requestOptions.body = params;
             requestOptions.headers["Content-Type"] = "application/x-www-form-urlencoded";
         } else {
-            url = `${fetchUrl}?${
-                params.toString()
-            }`;
+            url = `${fetchUrl}?${params.toString()
+                }`;
         }
 
         // Fetch data
         const response = await fetch(url, requestOptions);
-        if (! response.ok) 
-            throw new Error(`HTTP error! Status: ${
-                response.status
-            }`);
-        
+        if (!response.ok)
+            throw new Error(`HTTP error! Status: ${response.status
+                }`);
+
 
 
         const data = await response.json();
-        if (! data.success) 
+        if (!data.success)
             throw new Error("Backend returned error");
-        
+
 
 
         // Replace table body
-        if (tableBody) 
+        if (tableBody)
             tableBody.innerHTML = data.html || "";
-        
+
 
 
         // Replace pagination
@@ -140,25 +134,23 @@ async function loadTableDataWithPage(formId, tableId, fetchUrl, options = {}, pa
 
         return true;
     } catch (error) {
-        if (error.name === "AbortError") 
+        if (error.name === "AbortError")
             return false;
-        
+
 
 
         console.error(`Error loading table ${tableId}:`, error);
 
         if (tableBody) {
-            const colCount = table.querySelector("thead tr") ?. children.length || 1;
+            const colCount = table.querySelector("thead tr")?.children.length || 1;
             const errorRow = document.createElement("tr");
             errorRow.innerHTML = `
                 <td colspan="${colCount}" class="text-center">
-                    ${
-                options.errorText || "Error loading data."
-            }
+                    ${options.errorText || "Error loading data."
+                }
                     <button class="btn btn-sm btn-outline-primary retry-btn">
-                        ${
-                options.retryText || "Retry"
-            }
+                        ${options.retryText || "Retry"
+                }
                     </button>
                 </td>
             `;
@@ -166,11 +158,11 @@ async function loadTableDataWithPage(formId, tableId, fetchUrl, options = {}, pa
             tableBody.appendChild(errorRow);
 
             const retryBtn = errorRow.querySelector(".retry-btn");
-            retryBtn.addEventListener("click", () => loadTableData(formId, tableId, fetchUrl, options), {once: true});
+            retryBtn.addEventListener("click", () => loadTableData(formId, tableId, fetchUrl, options), { once: true });
         }
-        if (paginationWrapper) 
+        if (paginationWrapper)
             paginationWrapper.innerHTML = "";
-        
+
 
 
         if (typeof options.onError === "function") {
@@ -188,9 +180,9 @@ async function loadTableData(formId, tableId, fetchUrl, options = {}) {
     const form = document.getElementById(formId);
     const table = document.getElementById(tableId);
 
-    if (! form || ! table || !fetchUrl) 
+    if (!form || !table || !fetchUrl)
         return false;
-    
+
 
 
     const tableBody = table.querySelector("tbody");
@@ -218,9 +210,6 @@ async function loadTableData(formId, tableId, fetchUrl, options = {}) {
         const tableElement = document.getElementById(tableId);
         if (tableElement && tableElement.dataset.sort) {
             params.append('sort', tableElement.dataset.sort);
-            console.log('Sort parameter added:', tableElement.dataset.sort);
-        } else {
-            console.log('No sort parameter found for table:', tableId);
         }
 
         // Build request
@@ -236,30 +225,28 @@ async function loadTableData(formId, tableId, fetchUrl, options = {}) {
             requestOptions.body = params;
             requestOptions.headers["Content-Type"] = "application/x-www-form-urlencoded";
         } else {
-            url = `${fetchUrl}?${
-                params.toString()
-            }`;
+            url = `${fetchUrl}?${params.toString()
+                }`;
         }
 
         // Fetch data
         const response = await fetch(url, requestOptions);
-        if (! response.ok) 
-            throw new Error(`HTTP error! Status: ${
-                response.status
-            }`);
-        
+        if (!response.ok)
+            throw new Error(`HTTP error! Status: ${response.status
+                }`);
+
 
 
         const data = await response.json();
-        if (! data.success) 
+        if (!data.success)
             throw new Error("Backend returned error");
-        
+
 
 
         // Replace table body
-        if (tableBody) 
+        if (tableBody)
             tableBody.innerHTML = data.html || "";
-        
+
 
 
         // Replace pagination
@@ -291,25 +278,23 @@ async function loadTableData(formId, tableId, fetchUrl, options = {}) {
 
         return true;
     } catch (error) {
-        if (error.name === "AbortError") 
+        if (error.name === "AbortError")
             return false;
-        
+
 
 
         console.error(`Error loading table ${tableId}:`, error);
 
         if (tableBody) {
-            const colCount = table.querySelector("thead tr") ?. children.length || 1;
+            const colCount = table.querySelector("thead tr")?.children.length || 1;
             const errorRow = document.createElement("tr");
             errorRow.innerHTML = `
                 <td colspan="${colCount}" class="text-center">
-                    ${
-                options.errorText || "Error loading data."
-            }
+                    ${options.errorText || "Error loading data."
+                }
                     <button class="btn btn-sm btn-outline-primary retry-btn">
-                        ${
-                options.retryText || "Retry"
-            }
+                        ${options.retryText || "Retry"
+                }
                     </button>
                 </td>
             `;
@@ -317,11 +302,11 @@ async function loadTableData(formId, tableId, fetchUrl, options = {}) {
             tableBody.appendChild(errorRow);
 
             const retryBtn = errorRow.querySelector(".retry-btn");
-            retryBtn.addEventListener("click", () => loadTableData(formId, tableId, fetchUrl, options), {once: true});
+            retryBtn.addEventListener("click", () => loadTableData(formId, tableId, fetchUrl, options), { once: true });
         }
-        if (paginationWrapper) 
+        if (paginationWrapper)
             paginationWrapper.innerHTML = "";
-        
+
 
 
         if (typeof options.onError === "function") {
@@ -342,14 +327,12 @@ function showTableLoading(table, loadingText) {
         table.setAttribute("aria-busy", "true");
     }
 
-    let spinner = document.getElementById(`${
-        table.id
-    }-loading`);
-    if (! spinner) {
+    let spinner = document.getElementById(`${table.id
+        }-loading`);
+    if (!spinner) {
         spinner = document.createElement("div");
-        spinner.id = `${
-            table.id
-        }-loading`;
+        spinner.id = `${table.id
+            }-loading`;
         spinner.className = "table-spinner"; // CSS-based styling
         spinner.setAttribute("role", "status");
         spinner.setAttribute("aria-live", "polite");
@@ -369,12 +352,11 @@ function hideTableLoading(table) {
         table.style.pointerEvents = "auto";
         table.setAttribute("aria-busy", "false");
     }
-    const spinner = document.getElementById(`${
-        table.id
-    }-loading`);
-    if (spinner) 
+    const spinner = document.getElementById(`${table.id
+        }-loading`);
+    if (spinner)
         spinner.style.display = "none";
-    
+
 
 
 }
@@ -423,9 +405,9 @@ function $(selector) {
     return {
         wordSuggestion: function (options = {}) {
             elements.forEach((element) => {
-                if (!element) 
+                if (!element)
                     return;
-                
+
 
 
                 const config = {
@@ -437,7 +419,7 @@ function $(selector) {
                     onSelect: options.onSelect || null,
                     ...options
                 };
-                if (! config.url) {
+                if (!config.url) {
                     console.error("WordSuggestion: URL is required");
                     return;
                 }
@@ -469,7 +451,7 @@ function $(selector) {
                     onError: options.onError || null,
                     ...options
                 };
-                if (! config.tableId || ! config.url) {
+                if (!config.tableId || !config.url) {
                     console.error("Table AJAX: tableId and url are required");
                     return;
                 }
@@ -481,7 +463,7 @@ function $(selector) {
                     onSuccess: config.onSuccess,
                     onError: config.onError
                 }, config.includeInputs);
-                
+
                 // Initialize sorting if enabled
                 if (config.sortable) {
                     initTableSorting(config.tableId);
@@ -496,15 +478,15 @@ function $(selector) {
 function initTableSorting(tableId) {
     const table = document.getElementById(tableId);
     if (!table) return;
-    
+
     const sortableHeaders = table.querySelectorAll('th[data-sort]');
-    
+
     sortableHeaders.forEach(header => {
         header.style.cursor = 'pointer';
-        header.addEventListener('click', function() {
+        header.addEventListener('click', function () {
             const sortField = this.getAttribute('data-sort');
             const currentSort = table.dataset.sort || '';
-            
+
             let newSort;
             if (currentSort === sortField) {
                 // Currently ascending, switch to descending
@@ -516,19 +498,18 @@ function initTableSorting(tableId) {
                 // New field, start ascending
                 newSort = sortField;
             }
-            
+
             // Update table sort state
             table.dataset.sort = newSort;
-            console.log('Table sort updated to:', newSort);
-            
+
             // Update visual indicators
             updateSortIndicators(table, newSort);
-            
+
             // Dispatch sort changed event for filter tags
             document.dispatchEvent(new CustomEvent('sortChanged', {
                 detail: { sort: newSort }
             }));
-            
+
             // Reload table with new sort
             reloadTable(tableId);
         });
@@ -538,13 +519,13 @@ function initTableSorting(tableId) {
 // 🔹 Update sort visual indicators
 function updateSortIndicators(table, sortValue) {
     const headers = table.querySelectorAll('th[data-sort]');
-    
+
     headers.forEach(header => {
         const field = header.getAttribute('data-sort');
-        
+
         // Remove all sort classes
         header.classList.remove('active', 'asc', 'desc');
-        
+
         // Add appropriate class based on sort state
         if (sortValue === field) {
             header.classList.add('active', 'asc');

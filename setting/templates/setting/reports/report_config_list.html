@@ -39,17 +39,6 @@
             {% endif %}
         </form>
     </div>
-
-    <!-- Debug Info -->
-    <div class="debug-info" style="background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px;">
-        <strong>Debug Info:</strong><br>
-        Configs count: {{ configs|length }}<br>
-        Search query: "{{ search_query }}"<br>
-        {% if configs %}
-            First config: {{ configs.0.get_report_type_display }} - {{ configs.0.get_paper_size_display }}
-        {% endif %}
-    </div>
-
     <!-- Report Configurations Table -->
     <div class="table-container">
         {% if configs %}

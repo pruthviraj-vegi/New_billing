@@ -130,10 +130,6 @@ def report_config_list(request):
     page_number = request.GET.get("page")
     configs = paginator.get_page(page_number)
 
-    # Debug logging
-    logger.info(f"Report configs count: {configs.count()}")
-    logger.info(f"Search query: {search_query}")
-
     context = {
         "configs": configs,
         "search_query": search_query,

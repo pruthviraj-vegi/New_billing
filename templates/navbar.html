@@ -100,7 +100,8 @@
       <div class="dropdown-menu">
         <a href="{% url 'supplier:home' %}"
            class="dropdown-item {% if request.resolver_match.url_name == 'home' %}active{% endif %}">Supplier List</a>
-        <a href="{% url 'supplier:create' %}" class="dropdown-item">Add Supplier</a>
+        <a href="{% url 'supplier:create' %}"
+        class="dropdown-item {% if request.resolver_match.url_name == 'create' %}active{% endif %}">Add Supplier</a>
         {% comment %} <a href="#" class="dropdown-item">Purchase Orders</a> {% endcomment %}
       </div>
     </li>

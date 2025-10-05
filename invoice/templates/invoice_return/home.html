@@ -29,19 +29,14 @@
             <div class="search-group search-expanded">
                 <i class="fas fa-search search-icon"></i>
                 <div class="search-input-container">
-                    <div class="word-suggestion-container">
                         <input type="search"
                                name="search"
-                               class="search-input word-suggestion-input"
+                               class="search-input"
                                placeholder="Search return invoices by number, customer name, invoice number, or notes..."
                                value="{{ search_query }}"
                                id="searchInput"
                                autocomplete="off"
                                autofocus>
-                    </div>
-                    <div class="filter-tags-inline" id="filterTagsInline">
-                        <!-- Filter tags will be dynamically added here -->
-                    </div>
                 </div>
             </div>
             <select name="status" class="filter-select" id="statusFilter">
@@ -70,7 +65,7 @@
     
     <!-- Data Table -->
     <div class="table-container">
-        <table class="data-table">
+        <table class="data-table" id="data_table">
             <thead>
                 <tr>
                     <th class="sortable" data-sort="return_number">Return #</th>
@@ -104,7 +99,7 @@
     </div>
     
     <!-- Pagination Wrapper - Outside table for better styling -->
-    <div class="pagination-wrapper" id="pagination_wrapper">
+    <div class="pagination-wrapper" id="data_table_pagination">
         <!-- Pagination will be loaded here via AJAX -->
     </div>
 {% endblock content %}
@@ -113,16 +108,24 @@
     <script>
         urls = {
             fetch: '{% url "invoice:fetch_return_invoices" %}',
-            suggestions: '', // Add suggestions URL if needed later
         }
     </script>
 
-    <!-- Load the simple table AJAX -->
-    <script src="{% static 'js/fetchAjax.js' %}"></script>
-    
-    <!-- Load the filter tags manager -->
-    <script src="{% static 'js/filter-tags.js' %}"></script>
-    
-    <!-- Load the word suggestion system -->
-    <script src="{% static 'js/word-suggestion.js' %}"></script>
+    <!-- Load dependencies -->
+    <script src="{% static 'js/wordSuggestion.js' %}"></script>
+    <script src="{% static 'js/fetchData.js' %}"></script>
+
+    <script>
+        // Simple, clean initialization - just like Select2!
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize word suggestion on search input - jQuery-like syntax!
+            // Initialize table AJAX on search form - jQuery-like syntax!
+            $('#searchForm').ajax({
+                tableId: 'data_table',
+                url: urls.fetch,
+                placeholder: 'Loading invoices...',
+                includeInputs: false
+            });
+        });
+    </script>
 {% endblock extra_js %}

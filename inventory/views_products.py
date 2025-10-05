@@ -199,10 +199,10 @@ class CreateProduct(CreateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['category_form'] = CategoryForm()
-        context['cloth_type_form'] = ClothTypeForm()
-        context['uom_form'] = UOMForm()
-        context['gst_hsn_form'] = GSTHsnCodeForm()
+        context["category_form"] = CategoryForm()
+        context["cloth_type_form"] = ClothTypeForm()
+        context["uom_form"] = UOMForm()
+        context["gst_hsn_form"] = GSTHsnCodeForm()
         context["title"] = self.title
         return context
 
@@ -216,7 +216,9 @@ class CreateProduct(CreateView):
         return super().form_invalid(form)
 
     def get_success_url(self):
-        return reverse("inventory_products:home")
+        return reverse(
+            "inventory_products:details", kwargs={"product_id": self.object.id}
+        )
 
 
 class EditProduct(UpdateView):
@@ -228,10 +230,10 @@ class EditProduct(UpdateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["title"] = self.title
-        context['category_form'] = CategoryForm()
-        context['cloth_type_form'] = ClothTypeForm()
-        context['uom_form'] = UOMForm()
-        context['gst_hsn_form'] = GSTHsnCodeForm()
+        context["category_form"] = CategoryForm()
+        context["cloth_type_form"] = ClothTypeForm()
+        context["uom_form"] = UOMForm()
+        context["gst_hsn_form"] = GSTHsnCodeForm()
         return context
 
     def form_valid(self, form):

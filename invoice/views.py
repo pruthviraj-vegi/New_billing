@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponse
-from django.db.models import Q, Sum, Count
+from django.db.models import Q, Sum, Count, F
 from django.contrib import messages
 from django.views import View
 from cart.models import Cart
@@ -19,8 +19,264 @@ from django.core.exceptions import ValidationError
 import logging
 from customer.forms import CustomerForm
 from decimal import Decimal
+from base.getDates import getDates
 
 logger = logging.getLogger(__name__)
+
+
+def get_comparison_data(date_filter, current_start, current_end):
+    """Generate comparison data for line chart based on date filter"""
+    from datetime import timedelta
+
+    # Calculate previous period dates
+    period_duration = current_end - current_start
+
+    if date_filter in ["today", "yesterday"]:
+        # Daily comparison - compare with previous day
+        previous_start = current_start - timedelta(days=1)
+        previous_end = current_end - timedelta(days=1)
+        period_type = "daily"
+
+    elif date_filter in ["this_month", "last_month"]:
+        # Monthly comparison - compare with previous month
+        if current_start.month == 1:
+            previous_start = current_start.replace(
+                year=current_start.year - 1, month=12
+            )
+        else:
+            previous_start = current_start.replace(month=current_start.month - 1)
+
+        # Calculate previous month end date
+        if previous_start.month == 12:
+            next_month = previous_start.replace(year=previous_start.year + 1, month=1)
+        else:
+            next_month = previous_start.replace(month=previous_start.month + 1)
+
+        previous_end = next_month - timedelta(days=1)
+        period_type = "monthly"
+
+    elif date_filter in ["this_quarter", "last_quarter"]:
+        # Quarterly comparison - compare with previous quarter
+        quarter_start_month = ((current_start.month - 1) // 3) * 3 + 1
+        current_quarter_start = current_start.replace(month=quarter_start_month, day=1)
+
+        if quarter_start_month == 1:
+            previous_quarter_start = current_quarter_start.replace(
+                year=current_quarter_start.year - 1, month=10
+            )
+        elif quarter_start_month == 4:
+            previous_quarter_start = current_quarter_start.replace(month=1)
+        elif quarter_start_month == 7:
+            previous_quarter_start = current_quarter_start.replace(month=4)
+        else:  # quarter_start_month == 10
+            previous_quarter_start = current_quarter_start.replace(month=7)
+
+        # Calculate previous quarter end
+        if previous_quarter_start.month == 10:
+            previous_end = previous_quarter_start.replace(
+                year=previous_quarter_start.year + 1, month=1, day=1
+            ) - timedelta(days=1)
+        elif previous_quarter_start.month == 1:
+            previous_end = previous_quarter_start.replace(month=4, day=1) - timedelta(
+                days=1
+            )
+        elif previous_quarter_start.month == 4:
+            previous_end = previous_quarter_start.replace(month=7, day=1) - timedelta(
+                days=1
+            )
+        else:  # month == 7
+            previous_end = previous_quarter_start.replace(month=10, day=1) - timedelta(
+                days=1
+            )
+
+        previous_start = previous_quarter_start
+        period_type = "quarterly"
+
+    elif date_filter in ["this_finance", "last_finance"]:
+        # Financial year comparison - compare with previous financial year
+        if current_start.month >= 4:  # April onwards
+            previous_start = current_start.replace(
+                year=current_start.year - 1, month=4, day=1
+            )
+            previous_end = current_start.replace(
+                year=current_start.year, month=3, day=31
+            )
+        else:  # Before April
+            previous_start = current_start.replace(
+                year=current_start.year - 2, month=4, day=1
+            )
+            previous_end = current_start.replace(
+                year=current_start.year - 1, month=3, day=31
+            )
+        period_type = "yearly"
+
+    else:
+        # Default to monthly comparison
+        if current_start.month == 1:
+            previous_start = current_start.replace(
+                year=current_start.year - 1, month=12
+            )
+        else:
+            previous_start = current_start.replace(month=current_start.month - 1)
+
+        if previous_start.month == 12:
+            next_month = previous_start.replace(year=previous_start.year + 1, month=1)
+        else:
+            next_month = previous_start.replace(month=previous_start.month + 1)
+
+        previous_end = next_month - timedelta(days=1)
+        period_type = "monthly"
+
+    # Get current period data
+    current_invoices = Invoice.objects.filter(
+        invoice_date__date__range=[current_start, current_end]
+    )
+    current_data = get_period_data(
+        current_invoices, current_start, current_end, period_type
+    )
+
+    # Get previous period data
+    previous_invoices = Invoice.objects.filter(
+        invoice_date__date__range=[previous_start, previous_end]
+    )
+    previous_data = get_period_data(
+        previous_invoices, previous_start, previous_end, period_type
+    )
+
+    return {
+        "current_period": {
+            "label": get_period_label(current_start, current_end, period_type),
+            "data": current_data,
+            "start_date": current_start.isoformat(),
+            "end_date": current_end.isoformat(),
+        },
+        "previous_period": {
+            "label": get_period_label(previous_start, previous_end, period_type),
+            "data": previous_data,
+            "start_date": previous_start.isoformat(),
+            "end_date": previous_end.isoformat(),
+        },
+        "period_type": period_type,
+    }
+
+
+def get_period_data(invoices, start_date, end_date, period_type):
+    """Get aggregated data for a specific period"""
+    if period_type == "daily":
+        # For daily, return single data point
+        total_amount = invoices.aggregate(total=Sum("amount"))["total"] or Decimal("0")
+        total_invoices = invoices.count()
+        return [
+            {
+                "date": start_date.strftime("%Y-%m-%d"),
+                "amount": float(total_amount),
+                "invoices": total_invoices,
+            }
+        ]
+
+    elif period_type == "monthly":
+        # Group by day
+        daily_data = []
+        current_date = start_date
+        while current_date <= end_date:
+            day_invoices = invoices.filter(invoice_date__date=current_date)
+            day_amount = day_invoices.aggregate(total=Sum("amount"))[
+                "total"
+            ] or Decimal("0")
+            day_count = day_invoices.count()
+
+            daily_data.append(
+                {
+                    "date": current_date.strftime("%Y-%m-%d"),
+                    "amount": float(day_amount),
+                    "invoices": day_count,
+                }
+            )
+            current_date += timedelta(days=1)
+
+        return daily_data
+
+    elif period_type == "quarterly":
+        # Group by week
+        weekly_data = []
+        current_date = start_date
+        week_start = current_date
+
+        while current_date <= end_date:
+            if (
+                current_date.weekday() == 6 or current_date == end_date
+            ):  # Sunday or end of period
+                week_invoices = invoices.filter(
+                    invoice_date__date__range=[week_start, current_date]
+                )
+                week_amount = week_invoices.aggregate(total=Sum("amount"))[
+                    "total"
+                ] or Decimal("0")
+                week_count = week_invoices.count()
+
+                weekly_data.append(
+                    {
+                        "date": week_start.strftime("%Y-%m-%d"),
+                        "amount": float(week_amount),
+                        "invoices": week_count,
+                    }
+                )
+                week_start = current_date + timedelta(days=1)
+
+            current_date += timedelta(days=1)
+
+        return weekly_data
+
+    else:  # yearly
+        # Group by month
+        monthly_data = []
+        current_date = start_date
+
+        while current_date <= end_date:
+            # Get last day of current month
+            if current_date.month == 12:
+                next_month = current_date.replace(
+                    year=current_date.year + 1, month=1, day=1
+                )
+            else:
+                next_month = current_date.replace(month=current_date.month + 1, day=1)
+
+            month_end = next_month - timedelta(days=1)
+            if month_end > end_date:
+                month_end = end_date
+
+            month_invoices = invoices.filter(
+                invoice_date__date__range=[current_date, month_end]
+            )
+            month_amount = month_invoices.aggregate(total=Sum("amount"))[
+                "total"
+            ] or Decimal("0")
+            month_count = month_invoices.count()
+
+            monthly_data.append(
+                {
+                    "date": current_date.strftime("%Y-%m-%d"),
+                    "amount": float(month_amount),
+                    "invoices": month_count,
+                }
+            )
+
+            current_date = next_month
+
+        return monthly_data
+
+
+def get_period_label(start_date, end_date, period_type):
+    """Generate human-readable label for period"""
+    if period_type == "daily":
+        return start_date.strftime("%B %d, %Y")
+    elif period_type == "monthly":
+        return f"{start_date.strftime('%B %d')} - {end_date.strftime('%B %d, %Y')}"
+    elif period_type == "quarterly":
+        return f"Q{((start_date.month - 1) // 3) + 1} {start_date.year}"
+    else:  # yearly
+        return f"FY {start_date.year}-{end_date.year}"
+
 
 # Create your views here.
 
@@ -402,143 +658,13 @@ def invoice_dashboard(request):
 
 
 @login_required
-def fetch_dashboard_data(request):
-    """AJAX endpoint to fetch dashboard data."""
-    # Get date filter from request
-    date_filter = request.GET.get("date_filter", "today")
-
-    # Calculate date ranges
-    now = timezone.now()
-    today = now.date()
-
-    if date_filter == "today":
-        start_date = today
-        end_date = today
-    elif date_filter == "yesterday":
-        yesterday = today - timedelta(days=1)
-        start_date = yesterday
-        end_date = yesterday
-    elif date_filter == "this_month":
-        start_date = today.replace(day=1)
-        end_date = today
-    elif date_filter == "last_month":
-        first_this_month = today.replace(day=1)
-        last_month = first_this_month - timedelta(days=1)
-        start_date = last_month.replace(day=1)
-        end_date = last_month
-    elif date_filter == "this_year":
-        start_date = today.replace(month=1, day=1)
-        end_date = today
-    else:
-        # Default to today
-        start_date = today
-        end_date = today
-
-    # Filter invoices by date range
-    invoices = Invoice.objects.filter(
-        invoice_date__date__range=[start_date, end_date]
-    ).select_related("customer")
-
-    # Calculate metrics
-    total_invoices = invoices.count()
-    total_amount = invoices.aggregate(total=Sum("amount"))["total"] or Decimal("0")
-    total_discount = invoices.aggregate(total=Sum("discount_amount"))[
-        "total"
-    ] or Decimal("0")
-    total_paid = invoices.aggregate(total=Sum("paid_amount"))["total"] or Decimal("0")
-
-    # Calculate profit from invoice items
-    invoice_items = InvoiceItem.objects.filter(
-        invoice__invoice_date__date__range=[start_date, end_date]
-    )
-
-    total_profit = Decimal("0")
-    for item in invoice_items:
-        profit_per_unit = item.unit_price - item.purchase_price
-        total_profit += profit_per_unit * item.quantity
-
-    # Calculate net amount (amount - discount)
-    net_amount = total_amount - total_discount
-
-    # Calculate outstanding amount (net amount - paid amount)
-    outstanding_amount = net_amount - total_paid
-
-    # Payment status breakdown
-    payment_status_breakdown = (
-        invoices.values("payment_status")
-        .annotate(count=Count("id"), amount=Sum("amount"))
-        .order_by("payment_status")
-    )
-
-    # Payment type breakdown
-    payment_type_breakdown = (
-        invoices.values("payment_type")
-        .annotate(count=Count("id"), amount=Sum("amount"))
-        .order_by("payment_type")
-    )
-
-    # Recent invoices (last 10)
-    recent_invoices = invoices.order_by("-invoice_date")[:10]
-
-    context = {
-        "date_filter": date_filter,
-        "start_date": start_date,
-        "end_date": end_date,
-        "total_invoices": total_invoices,
-        "total_amount": total_amount,
-        "total_discount": total_discount,
-        "total_paid": total_paid,
-        "net_amount": net_amount,
-        "outstanding_amount": outstanding_amount,
-        "total_profit": total_profit,
-        "payment_status_breakdown": payment_status_breakdown,
-        "payment_type_breakdown": payment_type_breakdown,
-        "recent_invoices": recent_invoices,
-        "date_filter_options": [
-            ("today", "Today"),
-            ("yesterday", "Yesterday"),
-            ("this_month", "This Month"),
-            ("last_month", "Last Month"),
-            ("this_year", "This Year"),
-        ],
-    }
-
-    return render(request, "invoice/dashboard.html", context)
-
-
-@login_required
 def invoice_dashboard_fetch(request):
     """AJAX endpoint to fetch dashboard data"""
 
     # Get date filter from request
-    date_filter = request.GET.get("date_filter", "today")
+    date_filter = request.GET.get("date_filter", "this_month")
 
-    # Calculate date ranges
-    now = timezone.now()
-    today = now.date()
-
-    if date_filter == "today":
-        start_date = today
-        end_date = today
-    elif date_filter == "yesterday":
-        yesterday = today - timedelta(days=1)
-        start_date = yesterday
-        end_date = yesterday
-    elif date_filter == "this_month":
-        start_date = today.replace(day=1)
-        end_date = today
-    elif date_filter == "last_month":
-        first_this_month = today.replace(day=1)
-        last_month = first_this_month - timedelta(days=1)
-        start_date = last_month.replace(day=1)
-        end_date = last_month
-    elif date_filter == "this_year":
-        start_date = today.replace(month=1, day=1)
-        end_date = today
-    else:
-        # Default to today
-        start_date = today
-        end_date = today
+    start_date, end_date = getDates(request)
 
     # Filter invoices by date range
     invoices = Invoice.objects.filter(
@@ -569,6 +695,9 @@ def invoice_dashboard_fetch(request):
     # Calculate outstanding amount (net amount - paid amount)
     outstanding_amount = net_amount - total_paid
 
+    # Calculate comparison data for line chart
+    comparison_data = get_comparison_data(date_filter, start_date, end_date)
+
     # Payment status breakdown
     payment_status_breakdown = (
         invoices.values("payment_status")
@@ -583,8 +712,13 @@ def invoice_dashboard_fetch(request):
         .order_by("payment_type")
     )
 
-    # Recent invoices (last 10)
-    recent_invoices = invoices.order_by("-invoice_date")[:10]
+    # Category breakdown from invoice items
+    category_breakdown = (
+        invoice_items.select_related("product_variant__product__category")
+        .values("product_variant__product__category__name")
+        .annotate(count=Count("id"), amount=Sum(F("unit_price") * F("quantity")))
+        .order_by("-count")
+    )
 
     # Prepare response data
     stats = {
@@ -626,16 +760,17 @@ def invoice_dashboard_fetch(request):
             }
         )
 
-    # Recent invoices data
-    recent_invoices_data = []
-    for invoice in recent_invoices:
-        recent_invoices_data.append(
+    # Category data processing
+    category_data = []
+    for category in category_breakdown:
+        category_name = (
+            category["product_variant__product__category__name"] or "Uncategorized"
+        )
+        category_data.append(
             {
-                "id": invoice.id,
-                "invoice_number": invoice.invoice_number,
-                "customer_name": invoice.customer.name,
-                "amount": float(invoice.amount),
-                "invoice_date": invoice.invoice_date.isoformat(),
+                "category_name": category_name,
+                "count": category["count"],
+                "amount": float(category["amount"] or 0),
             }
         )
 
@@ -645,7 +780,8 @@ def invoice_dashboard_fetch(request):
             "stats": stats,
             "payment_status_breakdown": payment_status_data,
             "payment_type_breakdown": payment_type_data,
-            "recent_invoices": recent_invoices_data,
+            "category_breakdown": category_data,
+            "comparison_data": comparison_data,
             "date_range": {
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),

@@ -108,7 +108,6 @@ class InvoiceFinancialMixin:
             gst_groups[gst_rate]["tax_value"] += Decimal(str(item.tax_value))
             gst_groups[gst_rate]["total_tax_value"] += Decimal(str(item.gst_amount))
 
-        logger.debug(f"Tax values by GST: {gst_groups}")
         data = {
             "details": {
                 gst: {
@@ -118,7 +117,6 @@ class InvoiceFinancialMixin:
                 for gst, values in gst_groups.items()
             }
         }
-        logger.debug(f"Tax values by GST: {data}")
         return data
 
 

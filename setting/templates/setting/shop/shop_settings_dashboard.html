@@ -1,21 +1,44 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load static %}
+{% load custom_filters %}
 
 {% block title %}Shop & Report Settings{% endblock %}
 
 {% block content %}
-<div class="main-content">
-    <div class="page-header">
-        <h1 class="page-title">Shop & Report Settings</h1>
-        <div class="page-actions">
-            <a href="{% url 'setting:quick_report_settings' %}" class="btn btn-primary">
-                <i class="fas fa-cog"></i> Quick Settings
-            </a>
-        </div>
+<!-- Page Header -->
+<div class="page-header">
+    <h2 class="page-title">Shop & Report Settings</h2>
+    <div class="page-actions">
+        <a href="{% url 'setting:quick_report_settings' %}" class="btn btn-primary">
+            <i class="fas fa-cog"></i> Quick Settings
+        </a>
+        <a href="{% url 'setting:shop_details_list' %}" class="btn">
+            <i class="fas fa-list"></i>
+            Manage Shops
+        </a>
     </div>
+</div>
 
-    <!-- Shop Details Section -->
-    <div class="stats-grid">
+<!-- Breadcrumb Navigation -->
+<nav class="breadcrumb breadcrumb-right">
+    <a href="{% url 'base:home' %}" class="breadcrumb-item">Dashboard</a>
+    <span class="breadcrumb-separator">/</span>
+    <span class="breadcrumb-active">Shop & Report Settings</span>
+</nav>
+
+<!-- Loading State -->
+<div id="dashboardLoading" class="loading-container">
+    <div class="loading">
+        <i class="fas fa-spinner fa-spin"></i>
+        Loading settings data...
+    </div>
+</div>
+
+<!-- Dashboard Content -->
+<div id="dashboardContent" class="dashboardContent">
+
+    <!-- Quick Stats -->
+    <div class="stats-grid" id="statsGrid">
         <div class="stat-card">
             <div class="stat-icon">
                 <i class="fas fa-store"></i>
@@ -45,56 +68,57 @@
         </div>
     </div>
 
-    <!-- Active Shop Details -->
-    {% if active_shop %}
-        <div class="activity-section">
-            <h3 class="section-title">
-                <i class="fas fa-store"></i> Active Shop Details
-            </h3>
-            <div class="supplier-info-card">
-                <div class="supplier-basic-info">
-                    <div class="supplier-name">
-                        <h3>{{ active_shop.shop_name }}</h3>
-                        {% if active_shop.is_active %}
-                            <span class="detail-status status-active">Active</span>
-                        {% else %}
-                            <span class="detail-status status-inactive">Inactive</span>
-                        {% endif %}
+    <!-- Shop Details Analytics -->
+    <div class="activity-section">
+        <h2 class="section-title">Shop Details Analytics</h2>
+        
+        {% if active_shop %}
+            <div class="analytics-grid">
+                <div class="analytics-card">
+                    <h3 class="analytics-title">Active Shop Details</h3>
+                    <div class="analytics-content">
+                        <div class="supplier-info-card">
+                            <div class="supplier-basic-info">
+                                <div class="supplier-name">
+                                    <h3>{{ active_shop.shop_name }}</h3>
+                                    {% if active_shop.is_active %}
+                                        <span class="detail-status status-active">Active</span>
+                                    {% else %}
+                                        <span class="detail-status status-inactive">Inactive</span>
+                                    {% endif %}
+                                </div>
+                                <div class="supplier-contact">
+                                    <p><i class="fas fa-phone"></i> {{ active_shop.phone_number }}</p>
+                                    {% if active_shop.phone_two %}
+                                        <p><i class="fas fa-phone"></i> {{ active_shop.phone_two }}</p>
+                                    {% endif %}
+                                    {% if active_shop.email %}
+                                        <p><i class="fas fa-envelope"></i> {{ active_shop.email }}</p>
+                                    {% endif %}
+                                    {% if active_shop.gst_no %}
+                                        <p><i class="fas fa-file-invoice"></i> GST: {{ active_shop.gst_no }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="supplier-details">
+                                <p><strong>Address:</strong> {{ active_shop.full_address }}</p>
+                                {% if active_shop.website %}
+                                    <p><strong>Website:</strong> <a href="{{ active_shop.website }}" target="_blank">{{ active_shop.website }}</a></p>
+                                {% endif %}
+                            </div>
+                            <div class="page-actions" style="margin-top: 1rem;">
+                                <a href="{% url 'setting:shop_details_edit' active_shop.pk %}" class="btn btn-primary">
+                                    <i class="fas fa-edit"></i> Edit Shop Details
+                                </a>
+                                <a href="{% url 'setting:shop_details_detail' active_shop.pk %}" class="btn">
+                                    <i class="fas fa-eye"></i> View Details
+                                </a>
+                            </div>
+                        </div>
                     </div>
-                    <div class="supplier-contact">
-                        <p><i class="fas fa-phone"></i> {{ active_shop.phone_number }}</p>
-                        {% if active_shop.phone_two %}
-                            <p><i class="fas fa-phone"></i> {{ active_shop.phone_two }}</p>
-                        {% endif %}
-                        {% if active_shop.email %}
-                            <p><i class="fas fa-envelope"></i> {{ active_shop.email }}</p>
-                        {% endif %}
-                        {% if active_shop.gst_no %}
-                            <p><i class="fas fa-file-invoice"></i> GST: {{ active_shop.gst_no }}</p>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="supplier-details">
-                    <p><strong>Address:</strong> {{ active_shop.full_address }}</p>
-                    {% if active_shop.website %}
-                        <p><strong>Website:</strong> <a href="{{ active_shop.website }}" target="_blank">{{ active_shop.website }}</a></p>
-                    {% endif %}
-                </div>
-                <div class="page-actions" style="margin-top: 1rem;">
-                    <a href="{% url 'setting:shop_details_edit' active_shop.pk %}" class="btn btn-primary">
-                        <i class="fas fa-edit"></i> Edit Shop Details
-                    </a>
-                    <a href="{% url 'setting:shop_details_detail' active_shop.pk %}" class="btn">
-                        <i class="fas fa-eye"></i> View Details
-                    </a>
                 </div>
             </div>
-        </div>
-    {% else %}
-        <div class="activity-section">
-            <h3 class="section-title">
-                <i class="fas fa-store"></i> Shop Details
-            </h3>
+        {% else %}
             <div class="empty-state">
                 <i class="fas fa-store empty-state-icon"></i>
                 <h4>No Shop Details Found</h4>
@@ -103,14 +127,12 @@
                     <i class="fas fa-plus"></i> Add Shop Details
                 </a>
             </div>
-        </div>
-    {% endif %}
+        {% endif %}
+    </div>
 
     <!-- Report Configurations -->
     <div class="activity-section">
-        <h3 class="section-title">
-            <i class="fas fa-file-invoice"></i> Report Configurations
-        </h3>
+        <h2 class="section-title">Report Configurations</h2>
         {% if configs %}
             <div class="table-container">
                 <table class="data-table">
@@ -192,10 +214,8 @@
     </div>
 
     <!-- Quick Actions -->
-    <div class="activity-section">
-        <h3 class="section-title">
-            <i class="fas fa-bolt"></i> Quick Actions
-        </h3>
+    <div class="quick-actions">
+        <h2 class="section-title">Quick Actions</h2>
         <div class="actions-grid">
             <a href="{% url 'setting:shop_details_create' %}" class="action-card">
                 <i class="fas fa-store"></i>
@@ -217,29 +237,73 @@
     </div>
 </div>
 
+<!-- Error State -->
+<div id="dashboardError" class="error-container" style="display: none;">
+    <div class="error-message">
+        <i class="fas fa-exclamation-triangle"></i>
+        <h3>Failed to load settings data</h3>
+        <p>Please try again or contact support if the problem persists.</p>
+        <button type="button" class="btn btn-primary" onclick="loadSettingsData()">
+            <i class="fas fa-refresh"></i>
+            Retry
+        </button>
+    </div>
+</div>
+{% endblock content %}
+
+{% block extra_js %}
 <script>
-function setDefault(configId) {
-    if (confirm('Are you sure you want to set this configuration as default?')) {
-        fetch(`/base/report-configs/${configId}/set-default/`, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
-                'Content-Type': 'application/json',
-            },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                location.reload();
-            } else {
-                alert('Error: ' + data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while setting default configuration.');
-        });
+    // Settings dashboard configuration
+    const settingsConfig = {
+        currentFilter: 'settings'
+    };
+
+    // Load settings data function
+    function loadSettingsData() {
+        const loadingEl = document.getElementById('dashboardLoading');
+        const contentEl = document.getElementById('dashboardContent');
+        const errorEl = document.getElementById('dashboardError');
+        
+        // Show loading state
+        loadingEl.style.display = '';
+        contentEl.style.display = 'none';
+        errorEl.style.display = 'none';
+        
+        // Simulate loading (since this is a static page)
+        setTimeout(() => {
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'flex';
+        }, 500);
     }
-}
+
+    // Set default configuration function
+    function setDefault(configId) {
+        if (confirm('Are you sure you want to set this configuration as default?')) {
+            fetch(`/base/report-configs/${configId}/set-default/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while setting default configuration.');
+            });
+        }
+    }
+
+    // Initialize dashboard
+    document.addEventListener('DOMContentLoaded', function() {
+        loadSettingsData();
+    });
 </script>
-{% endblock %}
+{% endblock extra_js %}

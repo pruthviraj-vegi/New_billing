@@ -90,15 +90,15 @@ class DatesRange:
     def __init__(self, value):
         self.dates = DatesManipulation()
         ranges = {
-            "Today": self.dates.today_date,
-            "Yesterday": self.dates.yesterday_date,
-            "This Month": self.dates.this_month,
-            "Last Month": self.dates.last_month,
-            "This Finance": self.dates.this_finance,
-            "Last Finance": self.dates.last_finance,
-            "This Quarter": self.dates.this_quarter,
-            "Last Quarter": self.dates.last_quarter,
-            "Full Date": (
+            "today": self.dates.today_date,
+            "yesterday": self.dates.yesterday_date,
+            "this_month": self.dates.this_month,
+            "last_month": self.dates.last_month,
+            "this_finance": self.dates.this_finance,
+            "last_finance": self.dates.last_finance,
+            "this_quarter": self.dates.this_quarter,
+            "last_quarter": self.dates.last_quarter,
+            "full_date": (
                 start_of_day(datetime(2023, 1, 1)),
                 end_of_day(self.dates.today),
             ),
@@ -109,7 +109,7 @@ class DatesRange:
 # ---------- Public Function ----------
 def getDates(request):
     today = datetime.now()
-    type_of = request.GET.get("type_of", "This Month")
+    type_of = request.GET.get("date_filter", "this_month")
 
     if type_of == "custom":
         from_date = parse_date(request.GET.get("from_date"), today)

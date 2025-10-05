@@ -4,6 +4,19 @@
 
 {% block title %}Invoice Dashboard{% endblock %}
 
+{% block extra_css %}
+<style>
+    .page-header {
+        position: sticky;
+        top: var(--navbar-height);
+        z-index: 100;
+        
+    } 
+</style>
+
+
+{% endblock extra_css %}
+
 {% block content %}
 <!-- Page Header -->
 <div class="page-header">
@@ -16,7 +29,11 @@
                 <option value="yesterday">Yesterday</option>
                 <option value="this_month">This Month</option>
                 <option value="last_month">Last Month</option>
-                <option value="this_year">This Year</option>
+                <option value="this_finance">This Finance</option>
+                <option value="last_finance">Last Finance</option>
+                <option value="this_quarter">This Quarter</option>
+                <option value="last_quarter">Last Quarter</option>
+                <option value="full_date">Full Date</option>
             </select>
         </form>
         <a href="{% url 'invoice:home' %}" class="btn">
@@ -33,8 +50,8 @@
     <span class="breadcrumb-active">Invoice Dashboard</span>
 </nav>
 
-<!-- Loading State -->
-<div id="dashboardLoading" class="loading-container">
+<!-- Loading State - Hidden for seamless updates -->
+<div id="dashboardLoading" class="loading-container" style="display: none;">
     <div class="loading">
         <i class="fas fa-spinner fa-spin"></i>
         Loading dashboard data...
@@ -42,10 +59,58 @@
 </div>
 
 <!-- Dashboard Content -->
-<div id="dashboardContent" style="display: none;">
+<div id="dashboardContent" class="dashboardContent">
     <!-- Quick Stats -->
     <div class="stats-grid" id="statsGrid">
-        <!-- Stats will be loaded here via AJAX -->
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i class="fas fa-file-invoice"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-number" id="totalInvoices">0</h3>
+                <p class="stat-label">Total Invoices</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i class="fas fa-rupee-sign"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-number" id="totalAmount">₹0</h3>
+                <p class="stat-label">Total Amount</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i class="fas fa-calculator"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-number" id="netAmount">₹0</h3>
+                <p class="stat-label">Net Amount</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i class="fas fa-chart-line"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-number" id="totalProfit">₹0</h3>
+                <p class="stat-label">Total Profit</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i class="fas fa-percentage"></i>
+            </div>
+            <div class="stat-content">
+                <h3 class="stat-number" id="totalDiscount">₹0</h3>
+                <p class="stat-label">Total Discount</p>
+            </div>
+        </div>
     </div>
 
     <!-- Payment Analytics -->
@@ -56,27 +121,63 @@
         <div class="analytics-grid">
             <div class="analytics-card">
                 <h3 class="analytics-title">Payment Status</h3>
-                <div class="analytics-content" id="paymentStatusContent">
-                    <!-- Payment status data will be loaded here -->
+                <div class="analytics-content">
+                    <div class="chart-container">
+                        <canvas id="paymentStatusChart" width="280" height="180"></canvas>
+                    </div>
+                    <div class="chart-legend" id="paymentStatusLegend">
+                        <!-- Legend will be populated here -->
+                    </div>
                 </div>
             </div>
 
             <div class="analytics-card">
                 <h3 class="analytics-title">Payment Type</h3>
-                <div class="analytics-content" id="paymentTypeContent">
-                    <!-- Payment type data will be loaded here -->
+                <div class="analytics-content">
+                    <div class="chart-container">
+                        <canvas id="paymentTypeChart" width="280" height="180"></canvas>
+                    </div>
+                    <div class="chart-legend" id="paymentTypeLegend">
+                        <!-- Legend will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="analytics-card">
+                <h3 class="analytics-title">Product Categories</h3>
+                <div class="analytics-content">
+                    <div class="chart-container">
+                        <canvas id="categoryChart" width="280" height="180"></canvas>
+                    </div>
+                    <div class="chart-legend" id="categoryLegend">
+                        <!-- Legend will be populated here -->
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Recent Activity -->
+    <!-- Revenue Comparison Chart -->
     <div class="activity-section">
-        <h2 class="section-title">Recent Invoices</h2>
-        <div class="activity-list" id="recentInvoicesList">
-            <!-- Recent invoices will be loaded here -->
+        <h2 class="section-title">Revenue Comparison</h2>
+        <div class="comparison-chart-container">
+            <div class="comparison-chart-header">
+                
+                <div class="chart-info">
+                    <div class="period-info" id="periodInfo">
+                        <!-- Period information will be populated here -->
+                    </div>
+                </div>
+            </div>
+            <div class="comparison-chart-wrapper">
+                <canvas id="comparisonChart" width="800" height="400"></canvas>
+            </div>
+            <div class="chart-summary" id="chartSummary">
+                <!-- Summary statistics will be populated here -->
+            </div>
         </div>
     </div>
+
 
     <!-- Quick Actions -->
     <div class="quick-actions">
@@ -117,225 +218,16 @@
 {% endblock content %}
 
 {% block extra_js %}
+<!-- Chart.js Library -->
+<script src="{% static 'assets/plugins/chart/chart-4.5.js' %}"></script>
+<!-- Reusable Dashboard Charts Module -->
+<script src="{% static 'js/dashboard-charts.js' %}"></script>
 <script>
-    // Dashboard configuration
-    const dashboardConfig = {
-        fetchUrl: '{% url "invoice:dashboard_fetch" %}',
-        currentFilter: '{{ date_filter|default:"today" }}'
-    };
-
-    // Set initial filter value
-    document.addEventListener('DOMContentLoaded', function() {
-        const dateFilter = document.getElementById('dateFilter');
-        if (dateFilter) {
-            dateFilter.value = dashboardConfig.currentFilter;
-        }
-        
-        // Load initial data
-        loadDashboardData();
-        
-        // Setup filter change handler
-        dateFilter.addEventListener('change', function() {
-            loadDashboardData();
+    window.addEventListener('DOMContentLoaded', function() {
+        DashboardCharts.init({
+            fetchUrl: '{% url "invoice:dashboard_fetch" %}',
+            currentFilter: '{{ date_filter|default:"today" }}'
         });
     });
-
-    // Load dashboard data via AJAX
-    async function loadDashboardData() {
-        const loadingEl = document.getElementById('dashboardLoading');
-        const contentEl = document.getElementById('dashboardContent');
-        const errorEl = document.getElementById('dashboardError');
-        const dateFilter = document.getElementById('dateFilter');
-        
-        // Show loading state
-        loadingEl.style.display = 'block';
-        contentEl.style.display = 'none';
-        errorEl.style.display = 'none';
-        
-        try {
-            const params = new URLSearchParams({
-                date_filter: dateFilter.value
-            });
-            
-            const response = await fetch(`${dashboardConfig.fetchUrl}?${params}`);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                // Update stats
-                updateStats(data.stats);
-                
-                // Update payment analytics
-                updatePaymentAnalytics(data.payment_status_breakdown, data.payment_type_breakdown);
-                
-                // Update recent invoices
-                updateRecentInvoices(data.recent_invoices);
-                
-                // Show content
-                loadingEl.style.display = 'none';
-                contentEl.style.display = 'block';
-            } else {
-                throw new Error(data.error || 'Failed to load dashboard data');
-            }
-            
-        } catch (error) {
-            console.error('Dashboard loading error:', error);
-            loadingEl.style.display = 'none';
-            errorEl.style.display = 'block';
-        }
-    }
-
-    // Update stats cards
-    function updateStats(stats) {
-        const statsGrid = document.getElementById('statsGrid');
-        statsGrid.innerHTML = `
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-file-invoice"></i>
-                </div>
-                <div class="stat-content">
-                    <h3 class="stat-number">${stats.total_invoices}</h3>
-                    <p class="stat-label">Total Invoices</p>
-                </div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-rupee-sign"></i>
-                </div>
-                <div class="stat-content">
-                    <h3 class="stat-number">${formatCurrency(stats.total_amount)}</h3>
-                    <p class="stat-label">Total Amount</p>
-                </div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-calculator"></i>
-                </div>
-                <div class="stat-content">
-                    <h3 class="stat-number">${formatCurrency(stats.net_amount)}</h3>
-                    <p class="stat-label">Net Amount</p>
-                </div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-chart-line"></i>
-                </div>
-                <div class="stat-content">
-                    <h3 class="stat-number">${formatCurrency(stats.total_profit)}</h3>
-                    <p class="stat-label">Total Profit</p>
-                </div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-percentage"></i>
-                </div>
-                <div class="stat-content">
-                    <h3 class="stat-number">${formatCurrency(stats.total_discount)}</h3>
-                    <p class="stat-label">Total Discount</p>
-                </div>
-            </div>
-        `;
-    }
-
-    // Update payment analytics
-    function updatePaymentAnalytics(statusBreakdown, typeBreakdown) {
-        // Update payment status
-        const statusContent = document.getElementById('paymentStatusContent');
-        if (statusBreakdown && statusBreakdown.length > 0) {
-            statusContent.innerHTML = statusBreakdown.map(status => `
-                <div class="analytics-item">
-                    <div class="analytics-label">${status.payment_status}</div>
-                    <div class="analytics-value">
-                        <span class="analytics-count">${status.count}</span>
-                        <span class="analytics-amount">${formatCurrency(status.amount)}</span>
-                    </div>
-                    <div class="analytics-progress">
-                        <div class="progress-bar" style="width: ${status.percentage}%"></div>
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            statusContent.innerHTML = '<p class="text-muted">No payment data available</p>';
-        }
-
-        // Update payment type
-        const typeContent = document.getElementById('paymentTypeContent');
-        if (typeBreakdown && typeBreakdown.length > 0) {
-            typeContent.innerHTML = typeBreakdown.map(type => `
-                <div class="analytics-item">
-                    <div class="analytics-label">${type.payment_type}</div>
-                    <div class="analytics-value">
-                        <span class="analytics-count">${type.count}</span>
-                        <span class="analytics-amount">${formatCurrency(type.amount)}</span>
-                    </div>
-                    <div class="analytics-progress">
-                        <div class="progress-bar" style="width: ${type.percentage}%"></div>
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            typeContent.innerHTML = '<p class="text-muted">No payment type data available</p>';
-        }
-    }
-
-    // Update recent invoices
-    function updateRecentInvoices(invoices) {
-        const invoicesList = document.getElementById('recentInvoicesList');
-        if (invoices && invoices.length > 0) {
-            invoicesList.innerHTML = invoices.map(invoice => `
-                <div class="activity-item">
-                    <div class="activity-icon">
-                        <i class="fas fa-file-invoice"></i>
-                    </div>
-                    <div class="activity-content">
-                        <h4>
-                            <a href="/invoice/detail/${invoice.id}/" class="text-decoration-none">
-                                ${invoice.invoice_number}
-                            </a>
-                        </h4>
-                        <p>${invoice.customer_name} - ${formatCurrency(invoice.amount)}</p>
-                        <span class="activity-time">${formatDate(invoice.invoice_date)}</span>
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            invoicesList.innerHTML = `
-                <div class="activity-item">
-                    <div class="activity-icon">
-                        <i class="fas fa-info-circle"></i>
-                    </div>
-                    <div class="activity-content">
-                        <h4>No Recent Invoices</h4>
-                        <p>No invoices found for the selected period</p>
-                    </div>
-                </div>
-            `;
-        }
-    }
-
-    // Utility functions
-    function formatCurrency(amount) {
-        return new Intl.NumberFormat('en-IN', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        }).format(amount);
-    }
-
-    function formatDate(dateString) {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
-        });
-    }
 </script>
 {% endblock extra_js %}

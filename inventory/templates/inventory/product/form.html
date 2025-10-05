@@ -46,7 +46,7 @@
   <!-- Product Form -->
   <div class="form-container">
     <div class="form-card">
-      <form method="#" class="details-form" novalidate autocomplete="off">
+      <form method="post" class="details-form" autocomplete="off">
         {% csrf_token %}
         <!-- Form Errors -->
         {% if form.non_field_errors %}
@@ -240,18 +240,12 @@
     // Wait for DOM to be fully loaded
     $(document).ready(function() {
       
-      // Initialize Select2 fields
-      $('#id_uom, #id_hsn_code').select2({
-        placeholder: "Type to search...",
-        allowClear: true
-      });
+      // Initialize Select2 using the helper
+      Select2Helper.init('#id_uom, #id_hsn_code');
       
       // Initialize category separately (sometimes needs different timing)
       setTimeout(function() {
-        $('#id_category').select2({
-          placeholder: "Type to search...",
-          allowClear: true
-        });
+        Select2Helper.init('#id_category');
       }, 100);
       
       setupModal('id_category', 'Category', 'new_category', '#add_new_category', '{% url "inventory:category_create_ajax" %}');

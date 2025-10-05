@@ -23,24 +23,17 @@
     </nav>
     <!-- Search and Filter Section -->
     <div class="search-filter-section">
-        <form method="get" class="search-filter-form" id="searchForm">
+        <form method="#" class="search-filter-form" id="searchForm">
             <div class="search-group search-expanded">
                 <i class="fas fa-search search-icon"></i>
                 <div class="search-input-container">
-                    <div class="word-suggestion-container">
                         <input type="search"
                                name="search"
-                               class="search-input word-suggestion-input"
+                               class="search-input"
                                placeholder="Search UOMs by name, code, category or description..."
                                value=""
                                id="searchInput"
-                               data-url="{% url 'inventory:uom_suggestions' %}"
-                               autocomplete="off"
                                autofocus>
-                    </div>
-                    <div class="filter-tags-inline" id="filterTagsInline">
-                        <!-- Filter tags will be dynamically added here -->
-                    </div>
                 </div>
             </div>
             <select name="sort" class="filter-select" id="sortSelect">
@@ -63,7 +56,7 @@
     
     <!-- Data Table -->
     <div class="table-container">
-        <table class="data-table">
+        <table class="data-table" id="data_table">
             <thead>
                 <tr>
                     <th class="sortable" data-sort="id">ID</th>
@@ -97,7 +90,7 @@
     </div>
     
     <!-- Pagination Wrapper - Outside table for better styling -->
-    <div class="pagination-wrapper" id="pagination_wrapper">
+    <div class="pagination-wrapper" id="data_table_pagination">
         <!-- Pagination will be loaded here via AJAX -->
     </div>
 {% endblock content %}
@@ -110,14 +103,22 @@
         }
     </script>
 
-    <!-- Load the simple table AJAX -->
-    <script src="{% static 'js/fetchAjax.js' %}"></script>
+    <!-- Load dependencies -->
+    <script src="{% static 'js/wordSuggestion.js' %}"></script>
+    <script src="{% static 'js/fetchData.js' %}"></script>
     
-    <!-- Load the filter tags manager -->
-    <script src="{% static 'js/filter-tags.js' %}"></script>
-    
-    <!-- Load the word suggestion system -->
-    <script src="{% static 'js/word-suggestion.js' %}"></script>
+    <script>
+        // Simple, clean initialization - just like Select2!
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize table AJAX on search form - jQuery-like syntax!
+            $('#searchForm').ajax({
+                tableId: 'data_table',
+                url: urls.fetch,
+                placeholder: 'Loading UOMs...',
+                includeInputs: false
+            });
+        });
+    </script>
 
     
 {% endblock extra_js %}

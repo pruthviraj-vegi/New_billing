@@ -13,25 +13,65 @@
         Billing System
       {% endblock title %}
     </title>
+    <!-- Resource Hints for Performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="dns-prefetch" href="//localhost:8000">
     <link rel="shortcut icon"
           type="image/ico"
           href="{% static 'images/favicon.ico' %}" />
-    <!-- Inter Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
-          rel="stylesheet" />
-    <!-- Font Awesome for icons -->
+    <!-- Inter Font - Preload for faster loading -->
+    <link rel="preload" href="https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2" as="font" type="font/woff2" crossorigin>
+    <style>
+      @font-face {
+        font-family: 'Inter';
+        font-style: normal;
+        font-weight: 300 700;
+        font-display: swap;
+        src: url('https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2') format('woff2');
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+    </style>
+    <!-- Critical CSS (load synchronously) -->
     <link rel="stylesheet"
-          href="{% static 'assets/plugins/fontawesome/css/fontawesom.min.css' %}" />
-    <!-- Select2 -->
+          href="{% static 'assets/plugins/bootstrap/css/bootstrap.min.css' %}" />
+    <link rel="stylesheet" href="{% static 'css/main.css' %}" />
+    
+    <!-- Select2 CSS - Load early for forms -->
     <link rel="stylesheet"
           href="{% static 'assets/plugins/select2/css/select2.min.css' %}" />
     <link rel="stylesheet" 
-          href="{% static 'assets/plugins/select2/css/selectTheme.css' %}"  />
-    <!-- Bootstrap CSS -->
-    <link rel="stylesheet"
-          href="{% static 'assets/plugins/bootstrap/css/bootstrap.min.css' %}" />
-    <!-- Main CSS -->
-    <link rel="stylesheet" href="{% static 'css/main.css' %}" />
+          href="{% static 'assets/plugins/select2/css/selectTheme.css' %}" />
+    
+    <!-- Non-critical CSS (load with JavaScript) -->
+    <script>
+      // Load non-critical CSS asynchronously
+      function loadCSS(href) {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = href;
+        link.media = 'all';
+        document.head.appendChild(link);
+      }
+      
+      // Load CSS after page load
+      window.addEventListener('load', function() {
+        loadCSS('{% static "assets/plugins/fontawesome/css/fontawesom.min.css" %}');
+      });
+    </script>
+    
+    <!-- Fallback for critical icons -->
+    <style>
+      /* Minimal icon fallbacks */
+      .fas, .far, .fab { 
+        font-family: 'Font Awesome 5 Free', 'Font Awesome 5 Brands', sans-serif; 
+        font-weight: 900;
+      }
+      .fa-bell:before { content: "🔔"; }
+      .fa-moon:before { content: "🌙"; }
+      .fa-sign-out-alt:before { content: "🚪"; }
+      .fa-tachometer-alt:before { content: "📊"; }
+    </style>
     {% block extra_css %}
     {% endblock extra_css %}
   </head>
@@ -44,6 +84,8 @@
                height="30"
                width="30"
                alt="Logo"
+               loading="eager"
+               fetchpriority="high"
                onerror="this.style.display='none'" />
           <span>Billing System</span>
         </a>
@@ -70,63 +112,122 @@
     <main class="main-content">
       {% block content %}<!-- Content will be injected here -->{% endblock %}
     </main>
+    <!-- Critical JavaScript (load synchronously) -->
     <script src="{% static 'assets/js/jquery-3.7.1.min.js' %}"></script>
-    <!-- Bootstrap JavaScript -->
     <script src="{% static 'assets/plugins/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
-    <script src="{% static 'assets/plugins/select2/js/select2.min.js' %}"></script>
-    <!-- Popup System -->
-    <!-- <script src="{% static 'js/popup.js' %}"></script> -->
-    <!-- Main JavaScript -->
-    <script src="{% static 'js/main.js' %}"></script>
+    
+    <!-- Critical UI functionality (load early) -->
+    <script>
+      // Critical UI functions that need to work immediately
+      function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+          notification.classList.add('show');
+        }, 100);
+
+        setTimeout(() => {
+          notification.classList.remove('show');
+          setTimeout(() => {
+            notification.remove();
+          }, 300);
+        }, 3000);
+      }
+
+      // Theme toggle functionality
+      document.addEventListener('DOMContentLoaded', function() {
+        const themeToggle = document.getElementById('themeToggle');
+        const body = document.body;
+
+        if (themeToggle) {
+          // Check for saved theme preference or default to 'light'
+          const currentTheme = localStorage.getItem('theme') || 'light';
+          body.setAttribute('data-theme', currentTheme);
+          updateThemeIcon(currentTheme);
+
+          themeToggle.addEventListener('click', () => {
+            const currentTheme = body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+            body.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+          });
+
+          function updateThemeIcon(theme) {
+            const icon = themeToggle.querySelector('i');
+            if (icon) {
+              if (theme === 'dark') {
+                icon.className = 'fas fa-sun';
+              } else {
+                icon.className = 'fas fa-moon';
+              }
+            }
+          }
+        }
+
+        // Notification functionality
+        const notificationBtn = document.getElementById('notificationBtn');
+        if (notificationBtn) {
+          notificationBtn.addEventListener('click', () => {
+            showNotification('Notifications feature coming soon!', 'info');
+            
+            const badge = notificationBtn.querySelector('.notification-badge');
+            if (badge) {
+              const currentCount = parseInt(badge.textContent) || 0;
+              if (currentCount > 0) {
+                badge.textContent = currentCount - 1;
+                if (currentCount - 1 === 0) {
+                  badge.style.display = 'none';
+                }
+              }
+            }
+          });
+        }
+
+        // Performance toggle functionality
+        const perfToggle = document.getElementById('performanceToggle');
+        if (perfToggle) {
+          perfToggle.addEventListener('click', function() {
+            if (window.togglePerformanceDashboard) {
+              window.togglePerformanceDashboard();
+            }
+          });
+        }
+      });
+    </script>
+    
+    <!-- Select2 - Load early for forms -->
+    <script src="{% static 'assets/plugins/select2/js/select2.min.js' %}" defer></script>
+    <script src="{% static 'js/select2-init.js' %}" defer></script>
+    
+    <!-- Non-critical JavaScript (load after page load) -->
+    <script>
+      // Load non-critical JavaScript after page load
+      window.addEventListener('load', function() {
+        // Load Chart.js
+        const chartScript = document.createElement('script');
+        chartScript.src = '{% static "assets/plugins/chart/chart-4.5.js" %}';
+        document.head.appendChild(chartScript);
+        
+        // Load remaining main.js functionality
+        const mainScript = document.createElement('script');
+        mainScript.src = '{% static "js/main.js" %}';
+        document.head.appendChild(mainScript);
+      });
+    </script>
+    
+    <!-- Performance Analyzer (load async) -->
+    {% comment %} <script src="{% static 'js/performance-analyzer.js' %}" async></script> {% endcomment %}
     {% block extra_js %}
     {% endblock extra_js %}
     
     {% if messages %}
       {% for message in messages %}<script>showNotification('{{message}}', '{{message.tags}}')</script>{% endfor %}
     {% endif %}
-
-    {% comment %} <script>
-      // Wait until page load
-      window.addEventListener("load", () => {
-        console.log("=== Page Performance Metrics ===");
-      
-        // 1. Navigation timing (overall page load)
-        const [nav] = performance.getEntriesByType("navigation");
-        console.log("DNS lookup: ", (nav.domainLookupEnd - nav.domainLookupStart).toFixed(2), "ms");
-        console.log("TCP connection: ", (nav.connectEnd - nav.connectStart).toFixed(2), "ms");
-        if (nav.secureConnectionStart > 0) {
-          console.log("TLS handshake: ", (nav.connectEnd - nav.secureConnectionStart).toFixed(2), "ms");
-        }
-        console.log("TTFB (Time to First Byte): ", (nav.responseStart - nav.requestStart).toFixed(2), "ms");
-        console.log("Response time: ", (nav.responseEnd - nav.responseStart).toFixed(2), "ms");
-        console.log("DOM load: ", (nav.domContentLoadedEventEnd - nav.startTime).toFixed(2), "ms");
-        console.log("Full page load: ", (nav.loadEventEnd - nav.startTime).toFixed(2), "ms");
-      
-        // 2. Resource timing (CSS, JS, images, APIs)
-        console.log("\n=== Resource Load Times ===");
-        performance.getEntriesByType("resource").forEach(res => {
-          console.log(
-            `${res.initiatorType.toUpperCase()} → ${res.name} : ${res.duration.toFixed(2)} ms`
-          );
-        });
-      
-        // 3. Example: measure custom API calls
-        function measureApi(url) {
-          performance.mark("api-start");
-          return fetch(url).then(r => r.json()).then(data => {
-            performance.mark("api-end");
-            performance.measure("API Call", "api-start", "api-end");
-            const measure = performance.getEntriesByName("API Call").pop();
-            console.log(`API ${url} took: ${measure.duration.toFixed(2)} ms`);
-            performance.clearMarks();
-            performance.clearMeasures();
-            return data;
-          });
-        }
-      
-        // Test API measurement (remove/replace in production)
-        // measureApi("/api/data");
-      });
-      </script> {% endcomment %}
   </body>
 </html>

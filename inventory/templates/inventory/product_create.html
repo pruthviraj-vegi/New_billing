@@ -328,11 +328,11 @@
               <div class="total-amount-display">
                 <div class="total-row">
                   <span class="total-label">GST Amount:</span>
-                  <span class="total-value" id="gst-amount-display">₹0.00</span>
+                  <span class="total-value" id="gst-amount-display">0.00</span>
                 </div>
                 <div class="total-row">
                   <span class="total-label">Purchase Price (with GST):</span>
-                  <span class="total-value" id="purchase-with-gst-display">₹0.00</span>
+                  <span class="total-value" id="purchase-with-gst-display">0.00</span>
                 </div>
                 <div class="total-row">
                   <span class="total-label">Profit Margin (%):</span>
@@ -340,15 +340,15 @@
                 </div>
                 <div class="total-row">
                   <span class="total-label">Total Value:</span>
-                  <span class="total-value" id="total-value">₹0.00</span>
+                  <span class="total-value" id="total-value">0.00</span>
                 </div>
                 <div class="total-row">
                   <span class="total-label">After Discount:</span>
-                  <span class="total-value" id="after-discount">₹0.00</span>
+                  <span class="total-value" id="after-discount">0.00</span>
                 </div>
                 <div class="total-row total-final">
                   <span class="total-label">Final Price:</span>
-                  <span class="total-value" id="final-price">₹0.00</span>
+                  <span class="total-value" id="final-price">0.00</span>
                 </div>
               </div>
             </div>
@@ -396,11 +396,13 @@
       setupModal('id_size', 'Size', 'new_size', '#add_new_size', '{% url "inventory:size_create_ajax" %}');
       {% comment %} setupModal('id_color', 'Color', 'new_color', '#add_new_color', '{% url "inventory:color_create_ajax" %}'); {% endcomment %}
 
-      // Initialize select2 for dropdowns
-      $('#id_size,  #id_supplier_invoice, #id_category, #id_uom, #id_hsn_code').select2({
-        placeholder: "Type to search...",
-        allowClear: true
-      });
+
+      Select2Helper.init('#id_size,  #id_supplier_invoice,  #id_uom, #id_hsn_code');
+
+      // Initialize category separately (sometimes needs different timing)
+      setTimeout(function() {
+        Select2Helper.init('#id_category');
+      }, 100);
 
       $('#id_brand').wordSuggestion({
         url: urls.suggestions
@@ -430,16 +432,16 @@
     
         // Calculate GST amount
         const gstAmount = purchase * (gst / 100)
-        document.getElementById('gst-amount-display').textContent = `₹${gstAmount.toFixed(2)}`
+        document.getElementById('gst-amount-display').textContent = `${gstAmount.toFixed(2)}`
     
         // Calculate purchase price with GST
         const purchaseWithGST = purchase + gstAmount
-        document.getElementById('purchase-with-gst-display').textContent = `₹${purchaseWithGST.toFixed(2)}`
+        document.getElementById('purchase-with-gst-display').textContent = `${purchaseWithGST.toFixed(2)}`
     
         // Calculate after discount (final selling price)
         const discountAmount = selling * (discount / 100)
         const afterDiscount = selling - discountAmount
-        document.getElementById('after-discount').textContent = `₹${afterDiscount.toFixed(2)}`
+        document.getElementById('after-discount').textContent = `${afterDiscount.toFixed(2)}`
     
         // Calculate profit margin percentage - based on final selling price vs purchase price with GST
         const profitMargin = afterDiscount - purchaseWithGST
@@ -448,11 +450,11 @@
     
         // Calculate total value (purchase price × quantity)
         const totalValue = purchase * qty
-        document.getElementById('total-value').textContent = `₹${totalValue.toFixed(2)}`
+        document.getElementById('total-value').textContent = `${totalValue.toFixed(2)}`
     
         // Calculate final price (after discount)
         const finalPrice = afterDiscount
-        document.getElementById('final-price').textContent = `₹${finalPrice.toFixed(2)}`
+        document.getElementById('final-price').textContent = `${finalPrice.toFixed(2)}`
       }
     
       // Add event listeners
