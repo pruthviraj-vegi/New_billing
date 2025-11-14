@@ -53,7 +53,6 @@ class SupplierAdmin(admin.ModelAdmin):
         "phone",
         "gstin",
         "email",
-        "address",
     )
     readonly_fields = (
         "created_at",

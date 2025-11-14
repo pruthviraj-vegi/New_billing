@@ -1,514 +1,655 @@
 /**
- * Cart Management JavaScript
- * Handles all cart operations including add, update, delete, and barcode scanning
+ * Optimized CartManager
+ * Handles cart CRUD, barcode scanning, and real-time totals
+ * Optimized for performance, readability, and maintainability
  */
 
 class CartManager {
     constructor() {
-        this.initializeElements();
-        this.attachEventListeners();
-        this.setupCurrencyFormatter();
-        this.setupNotificationFallback();
-        this.focusBarcodeInput();
+        this.initGlobals();
+        this.initDOM();
+        this.initListeners();
+        this.focusBarcode();
+
+        if (this.dom.totalSelling && this.dom.body) {
+            setTimeout(() => this.recalculateTotals(), 50);
+        }
     }
 
-    initializeElements() {
-        // Get data from global variables set by Django template
+    /*** ───────── INITIALIZATION ───────── ***/
+    initGlobals() {
         if (!window.CART_DATA) {
-            console.error('CART_DATA not found. Make sure the template is properly loaded.');
+            console.error('CART_DATA missing. Make sure the template is properly loaded.');
             return;
         }
-        
-        this.csrfToken = window.CART_DATA.csrfToken;
-        this.cartId = window.CART_DATA.cartId;
-        this.urls = window.CART_DATA.urls;
-        
-        // DOM elements
-        this.barcodeForm = document.getElementById('barcodeForm');
-        this.barcodeInput = document.getElementById('barcodeInput');
-        this.cartItemsBody = document.getElementById('cartItemsBody');
-        this.totalItems = document.getElementById('totalItems');
-        this.totalAmount = document.getElementById('totalAmount');
-        
-        if (!this.csrfToken || !this.cartId) {
-            console.error('Required data not found. CSRF Token:', !!this.csrfToken, 'Cart ID:', this.cartId);
-            return;
-        }
-    }
 
-    attachEventListeners() {
-        // Event delegation for table actions
-        if (this.cartItemsBody) {
-            this.cartItemsBody.addEventListener('click', this.handleTableActions.bind(this));
-            this.cartItemsBody.addEventListener('keydown', this.handleInputKeydown.bind(this));
-        }
+        const { CART_DATA } = window;
+        this.csrf = CART_DATA.csrfToken;
+        this.cartId = CART_DATA.cartId;
+        this.urls = CART_DATA.urls;
 
-        // Barcode form submission
-        if (this.barcodeForm) {
-            this.barcodeForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                const barcode = this.barcodeInput.value.trim();
-                if (!barcode) {
-                    this.showNotification('Please enter a barcode', 'error');
-                    return;
-                }
-                this.handleBarcodeSubmit(this.cartId, barcode);
-            });
-        }
-
-        // Cart options dropdown event listeners
-        this.attachDropdownEventListeners();
-
-        // Real-time discount calculation
-        this.attachRealTimeDiscountCalculation();
-    }
-
-    // Add real-time discount calculation
-    attachRealTimeDiscountCalculation() {
-        if (this.cartItemsBody) {
-            this.cartItemsBody.addEventListener('input', (e) => {
-                const target = e.target;
-                if (target.classList.contains('quantity-input') || target.classList.contains('price-input')) {
-                    this.updateDiscountInRealTime(target);
-                }
-            });
-        }
-    }
-
-    updateDiscountInRealTime(input) {
-        const row = input.closest('tr');
-        if (!row) return;
-
-        const quantityInput = row.querySelector('.quantity-input');
-        const priceInput = row.querySelector('.price-input');
-        const discountCell = row.querySelector('.discount-cell'); // Use the class selector
-        const amountCell = row.querySelector('.amount-cell');
-
-        if (!quantityInput || !priceInput || !discountCell || !amountCell) return;
-
-        const quantity = parseFloat(quantityInput.value) || 0;
-        const price = parseFloat(priceInput.value) || 0;
-        const sellingPrice = parseFloat(row.querySelector('td:nth-child(4)').textContent.replace(/[^\d.-]/g, '')) || 0;
-
-        // Calculate new amount
-        const newAmount = (quantity * price).toFixed(2);
-        amountCell.textContent = this.formatCurrency(newAmount);
-
-        // Calculate new discount
-        if (sellingPrice > 0) {
-            const discount = Math.max(0, ((sellingPrice - price) / sellingPrice) * 100);
-            discountCell.textContent = `${discount.toFixed(2)}%`;
-        } else {
-            discountCell.textContent = '0%';
-        }
-    }
-
-    attachDropdownEventListeners() {
-        // Initialize dropdown functionality
-        this.initializeDropdown();
-
-        // Archive cart button
-        const archiveCartBtn = document.getElementById('archiveCartBtn');
-        if (archiveCartBtn) {
-            archiveCartBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.showConfirmModal(
-                    'Archive Cart',
-                    'Are you sure you want to archive this cart? This action cannot be undone.',
-                    () => this.archiveCart()
-                );
-            });
-        }
-
-        // Clear cart button
-        const clearCartBtn = document.getElementById('clearCartBtn');
-        if (clearCartBtn) {
-            clearCartBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.showConfirmModal(
-                    'Clear Cart',
-                    'Are you sure you want to clear all items from this cart? This action cannot be undone.',
-                    () => this.clearCart()
-                );
-            });
-        }
-
-        // Print cart button
-        const printCartBtn = document.getElementById('printCartBtn');
-        if (printCartBtn) {
-            printCartBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.printCart();
-            });
-        }
-
-        // Export cart button
-        const exportCartBtn = document.getElementById('exportCartBtn');
-        if (exportCartBtn) {
-            exportCartBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.exportCart();
-            });
-        }
-    }
-
-    initializeDropdown() {
-        const dropdownToggle = document.getElementById('cartOptionsDropdown');
-        const dropdownMenu = document.querySelector('.cart-dropdown .dropdown-menu');
-        
-        if (dropdownToggle && dropdownMenu) {
-            // Try Bootstrap first
-            if (typeof bootstrap !== 'undefined') {
-                const dropdown = new bootstrap.Dropdown(dropdownToggle);
-                return;
-            }
-            
-            // Fallback: manual dropdown toggle
-            dropdownToggle.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                const isOpen = dropdownMenu.classList.contains('show');
-                
-                // Close all other dropdowns
-                document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
-                    menu.classList.remove('show');
-                });
-                
-                // Toggle current dropdown
-                if (!isOpen) {
-                    dropdownMenu.classList.add('show');
-                }
-            });
-            
-            // Close dropdown when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!dropdownToggle.contains(e.target) && !dropdownMenu.contains(e.target)) {
-                    dropdownMenu.classList.remove('show');
-                }
-            });
-            
-            // Close dropdown when pressing Escape
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') {
-                    dropdownMenu.classList.remove('show');
-                }
-            });
-        }
-    }
-
-    setupCurrencyFormatter() {
-        this.currencyFormatter = new Intl.NumberFormat('en-IN', {
+        this.formatter = new Intl.NumberFormat('en-IN', {
             minimumFractionDigits: 2,
-            maximumFractionDigits: 2
+            maximumFractionDigits: 2,
         });
     }
 
-    setupNotificationFallback() {
-        if (typeof showNotification === 'undefined') {
-            window.showNotification = this.createToastNotification.bind(this);
+    initDOM() {
+        this.dom = {
+            form: document.getElementById('barcodeForm'),
+            input: document.getElementById('barcodeInput'),
+            body: document.getElementById('cartItemsBody'),
+            totalItems: document.getElementById('totalItems'),
+            totalAmount: document.getElementById('totalAmount'),
+            totalSelling: document.getElementById('totalSellingPrice'),
+            archiveBtn: document.getElementById('archiveCartBtn'),
+            clearBtn: document.getElementById('clearCartBtn'),
+            priceHeader: document.getElementById('priceColumnHeader'),
+        };
+
+        // Initialize price toggle state
+        this.priceToggleState = false;
+        window.cartPriceToggleState = false; // Keep global for backward compatibility
+    }
+
+    initListeners() {
+        const { form, body, archiveBtn, clearBtn } = this.dom;
+
+        if (form) {
+            form.addEventListener('submit', e => this.onBarcodeSubmit(e));
+        }
+
+        if (body) {
+            body.addEventListener('click', e => this.onTableClick(e));
+            body.addEventListener('keydown', e => this.onInputKey(e));
+            body.addEventListener('input', e => this.onRealTimeUpdate(e));
+        }
+
+        if (archiveBtn) {
+            archiveBtn.addEventListener('click', () => {
+                this.confirm('Archive Cart', 'Are you sure you want to archive this cart? This action cannot be undone.', () => this.archiveCart());
+            });
+        }
+
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                this.confirm('Clear Cart', 'Are you sure you want to clear all items from this cart? This action cannot be undone.', () => this.clearCart());
+            });
+        }
+
+        this.initDropdown();
+        this.initPriceToggle();
+    }
+
+    /*** ───────── HELPERS ───────── ***/
+    format(num) {
+        const n = typeof num === 'string' ? parseFloat(num.replace(/[^\d.-]/g, '')) : parseFloat(num);
+        return isNaN(n) || !isFinite(n) ? '0.00' : this.formatter.format(n);
+    }
+
+    calcDiscount(selling, price) {
+        return selling > 0 ? Math.max(0, ((selling - price) / selling) * 100) : 0;
+    }
+
+    async api(url, method = 'GET', body = null) {
+        try {
+            const opts = {
+                method,
+                headers: {
+                    'X-CSRFToken': this.csrf,
+                    'Content-Type': 'application/json',
+                },
+            };
+            if (body) opts.body = JSON.stringify(body);
+
+            const res = await fetch(url, opts);
+            const data = await res.json();
+
+            // Check for API-level errors
+            if (!res.ok || data.status === 'error') {
+                throw new Error(data.message || res.statusText || `HTTP ${res.status}`);
+            }
+
+            return data;
+        } catch (err) {
+            // Re-throw for caller to handle - they can provide context-specific messages
+            throw err;
         }
     }
 
-    focusBarcodeInput() {
-        if (this.barcodeInput) {
-            this.barcodeInput.focus();
+    focusBarcode() {
+        this.dom.input?.focus();
+    }
+
+    notify(msg, type = 'info') {
+        if (typeof showNotification === 'function') {
+            showNotification(msg, type);
+        } else {
+            console.log(`[${type.toUpperCase()}] ${msg}`);
         }
     }
 
-    // Event Handlers
-    handleInputKeydown(e) {
-        if (e.key !== 'Enter') 
-            return;
-        
-
-
-        const target = e.target;
-        if (! target.classList.contains('quantity-input') && ! target.classList.contains('price-input')) {
-            return;
+    /*** ───────── PRICE TOGGLE ───────── ***/
+    initPriceToggle() {
+        // Initialize price display format after DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.formatPriceDisplays());
+        } else {
+            // DOM already loaded
+            setTimeout(() => this.formatPriceDisplays(), 50);
         }
 
+        // Listen for F9 key press
+        document.addEventListener('keydown', (e) => {
+            if (e.keyCode === 120 || e.key === 'F9') {
+                e.preventDefault();
+                this.togglePriceDisplay();
+            }
+        });
+    }
+
+    formatPriceDisplays() {
+        const priceCells = document.querySelectorAll('.price-toggle-cell .price-display');
+        priceCells.forEach(span => {
+            const value = parseFloat(span.textContent.replace(/[^\d.-]/g, '')) || 0;
+            span.textContent = this.formatPriceAnimation(value);
+        });
+    }
+
+    formatPriceAnimation(value) {
+        return value.toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+    }
+
+    animatePriceChange(element, startValue, endValue, duration = 300) {
+        const startTime = performance.now();
+        const difference = endValue - startValue;
+
+        const update = (currentTime) => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            // Easing function for smooth animation
+            const easeOutQuad = 1 - Math.pow(1 - progress, 2);
+            const currentValue = startValue + difference * easeOutQuad;
+
+            element.textContent = this.formatPriceAnimation(currentValue);
+
+            if (progress < 1) {
+                requestAnimationFrame(update);
+            } else {
+                element.textContent = this.formatPriceAnimation(endValue);
+            }
+        };
+
+        requestAnimationFrame(update);
+    }
+
+    togglePriceDisplay() {
+        this.priceToggleState = !this.priceToggleState;
+        window.cartPriceToggleState = this.priceToggleState; // Keep global for backward compatibility
+
+        const header = this.dom.priceHeader;
+        const priceCells = document.querySelectorAll('.price-toggle-cell');
+
+        // Update header
+        if (header) {
+            header.textContent = this.priceToggleState ? 'Purchase Price' : 'Selling Price';
+        }
+
+        // Update all price cells
+        priceCells.forEach(cell => {
+            const sellingPrice = parseFloat(cell.getAttribute('data-selling-price')) || 0;
+            const purchasePrice = parseFloat(cell.getAttribute('data-purchase-price')) || 0;
+            const displaySpan = cell.querySelector('.price-display');
+
+            if (displaySpan) {
+                const targetPrice = this.priceToggleState ? purchasePrice : sellingPrice;
+                // Get current displayed value (remove currency symbols and parse)
+                const currentText = displaySpan.textContent.replace(/[^\d.-]/g, '');
+                const currentPrice = parseFloat(currentText) || 0;
+
+                // Animate the price change
+                this.animatePriceChange(displaySpan, currentPrice, targetPrice, 300);
+            }
+        });
+    }
+
+    /*** ───────── UI EVENTS ───────── ***/
+    async onBarcodeSubmit(e) {
         e.preventDefault();
+        const code = this.dom.input.value.trim();
+        if (!code) return this.notify('Please enter a barcode', 'error');
 
-        const itemId = target.dataset.itemId;
-        if (itemId) {
-            this.handleUpdateItem(itemId);
+        try {
+            const data = await this.api(this.urls.scanBarcode, 'POST', {
+                barcode: code,
+                cart_id: Number(this.cartId),
+                quantity: 1,
+            });
+
+            if (data.status !== 'success') {
+                return this.notify(data.message || 'Failed to add item', 'error');
+            }
+
+            this.dom.input.value = '';
+
+            if (!data.cart_item) {
+                return this.notify('Invalid response structure', 'error');
+            }
+
+            if (data.type === 'Create') {
+                this.addCartRow(data.cart_item);
+                this.notify('Item added successfully', 'success');
+            } else if (data.type === 'Update') {
+                this.updateCartRow(data.cart_item);
+                this.notify('Item updated successfully', 'success');
+            }
+
+            if (data.cart_total !== undefined) {
+                this.updateTotals(data.cart_total);
+            } else {
+                this.recalculateTotals();
+            }
+        } catch (err) {
+            console.error('Error in barcode submission:', err);
+            this.notify(`Error adding product to cart: ${err.message}`, 'error');
+        } finally {
+            // Mark form submission as complete (for FormSubmitGuard)
+            if (window.FormSubmitGuard && this.dom.form) {
+                window.FormSubmitGuard.complete(this.dom.form);
+            }
+            this.focusBarcode();
         }
     }
 
-    handleTableActions(e) {
-        const target = e.target;
-        const button = target.closest('.update-item-btn, .delete-item-btn');
-
-        if (! button) 
-            return;
-        
-
-
-        const itemId = button.dataset.itemId;
-        if (! itemId) 
-            return;
-        
-
-
-        if (button.classList.contains('update-item-btn')) {
-            this.handleUpdateItem(itemId);
-        } else if (button.classList.contains('delete-item-btn')) {
-            this.handleDeleteItem(itemId);
+    onInputKey(e) {
+        if (e.key === 'Enter' && e.target.matches('.quantity-input, .price-input')) {
+            e.preventDefault();
+            const itemId = e.target.dataset.itemId;
+            if (itemId) {
+                this.updateItem(itemId);
+            }
         }
     }
 
-    // Item Management
-    handleUpdateItem(itemId) {
-        const row = document.getElementById(`cart-item-${itemId}`);
+    onTableClick(e) {
+        const btn = e.target.closest('.update-item-btn, .delete-item-btn');
+        if (!btn) return;
+
+        const itemId = btn.dataset.itemId;
+        if (!itemId) return;
+
+        if (btn.classList.contains('update-item-btn')) {
+            this.updateItem(itemId);
+        } else if (btn.classList.contains('delete-item-btn')) {
+            this.deleteItem(itemId);
+        }
+    }
+
+    onRealTimeUpdate(e) {
+        const el = e.target;
+        if (!el.matches('.quantity-input, .price-input')) return;
+
+        const row = el.closest('tr');
+        if (!row) return;
+
+        const qtyInput = row.querySelector('.quantity-input');
+        const priceInput = row.querySelector('.price-input');
+        const discountCell = row.querySelector('.discount-cell');
+        const amountCell = row.querySelector('.amount-cell');
+        const priceToggleCell = row.querySelector('.price-toggle-cell');
+
+        if (!qtyInput || !priceInput || !discountCell || !amountCell) return;
+
+        const qty = parseFloat(qtyInput.value) || 0;
+        const price = parseFloat(priceInput.value) || 0;
+        const sell = parseFloat(priceToggleCell?.dataset.sellingPrice) || 0;
+
+        // Calculate and update amount
+        const newAmount = qty * price;
+        const roundedAmount = Math.round(newAmount * 100) / 100;
+        amountCell.textContent = this.format(roundedAmount);
+
+        // Calculate and update discount
+        const discount = this.calcDiscount(sell, price);
+        discountCell.textContent = `${discount.toFixed(2)}%`;
+
+        this.recalculateTotals();
+    }
+
+    /*** ───────── CRUD OPS ───────── ***/
+    async updateItem(id) {
+        const row = document.getElementById(`cart-item-${id}`);
         if (!row) {
-            this.showNotification('Item not found', 'error');
-            return;
+            return this.notify('Item not found', 'error');
         }
 
-        const quantityInput = row.querySelector('.quantity-input');
+        const qtyInput = row.querySelector('.quantity-input');
         const priceInput = row.querySelector('.price-input');
         const amountCell = row.querySelector('.amount-cell');
         const discountCell = row.querySelector('.discount-cell');
 
-        if (!quantityInput || !priceInput || !amountCell) {
-            this.showNotification('Invalid form inputs', 'error');
-            return;
+        if (!qtyInput || !priceInput || !amountCell) {
+            return this.notify('Invalid form inputs', 'error');
+        }
+
+        const qty = parseFloat(qtyInput.value);
+        const price = parseFloat(priceInput.value);
+
+        if (!qty || !price || qty <= 0 || price < 0) {
+            return this.notify('Please enter valid quantity and price', 'error');
         }
 
         // Store original values for rollback
         const originalValues = {
-            quantity: quantityInput.value,
+            quantity: qtyInput.value,
             price: priceInput.value,
             amount: amountCell.textContent,
             discount: discountCell ? discountCell.textContent : '0%',
-            totalAmount: this.totalAmount.textContent
+            totalAmount: this.dom.totalAmount.textContent,
         };
 
-        const quantity = parseFloat(quantityInput.value);
-        const price = parseFloat(priceInput.value);
-
-        if (!quantity || !price || quantity <= 0 || price < 0) {
-            this.showNotification('Please enter valid quantity and price', 'error');
-            return;
+        const btn = row.querySelector('.update-item-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         }
 
-        this.updateCartItem(itemId, quantity, price, originalValues);
-    }
-
-    handleDeleteItem(itemId) {
-        if (!confirm('Are you sure you want to remove this item?')) 
-            return;
-        
-
-        this.deleteCartItem(itemId);
-    }
-
-    // API Operations
-    async updateCartItem(itemId, quantity, price, originalValues) {
-        const row = document.getElementById(`cart-item-${itemId}`);
-        const quantityInput = row?.querySelector('.quantity-input');
-        const priceInput = row?.querySelector('.price-input');
-        const amountCell = row?.querySelector('.amount-cell');
-        const discountCell = row?.querySelector('.discount-cell');
-        
-        // Show loading state
-        const updateButton = row?.querySelector(`.update-item-btn[data-item-id="${itemId}"]`);
-        if (updateButton) {
-            updateButton.disabled = true;
-            updateButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        }
-        
         try {
             // Optimistic UI update
-            const newAmount = (quantity * price).toFixed(2);
-            if (quantityInput) quantityInput.value = quantity;
-            if (priceInput) priceInput.value = price;
-            if (amountCell) amountCell.textContent = this.formatCurrency(newAmount);
-            
+            const newAmount = qty * price;
+            const roundedAmount = Math.round(newAmount * 100) / 100;
+            qtyInput.value = qty;
+            priceInput.value = price;
+            amountCell.textContent = this.format(roundedAmount);
+
             // Calculate and update discount optimistically
             if (discountCell) {
-                const sellingPrice = parseFloat(row.querySelector('td:nth-child(4)').textContent.replace(/[^\d.-]/g, ''));
+                const sellingPrice = parseFloat(row.querySelector('.price-toggle-cell')?.dataset.sellingPrice) || 0;
                 if (sellingPrice > 0) {
-                    const discount = Math.max(0, ((sellingPrice - price) / sellingPrice) * 100);
+                    const discount = this.calcDiscount(sellingPrice, price);
                     discountCell.textContent = `${discount.toFixed(2)}%`;
                 }
             }
-            
-            // Use the cart ID from the data attribute
-            const response = await fetch(this.urls.manageItem.replace('0', itemId), {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': this.csrfToken
-                },
-                body: JSON.stringify({ quantity, price })
-            });
-            
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                this.showNotification('Item updated successfully', 'success');
-                
-                // Update with server response data
-                if (data.cart_item) {
-                    if (amountCell) amountCell.textContent = this.formatCurrency(data.cart_item.amount);
-                    
-                    // Update discount percentage if available
-                    if (data.cart_item.discount_percentage !== undefined && discountCell) {
-                        discountCell.textContent = `${data.cart_item.discount_percentage}%`;
-                    }
+
+            this.recalculateTotals();
+
+            const data = await this.api(this.urls.manageItem.replace('0', id), 'PUT', { quantity: qty, price });
+
+            // Update with server response data
+            if (data.cart_item) {
+                if (amountCell) {
+                    amountCell.textContent = this.format(data.cart_item.amount);
                 }
-                
-                this.updateTotalAmount(data.cart_total);
-            } else {
-                this.rollbackItemUpdate(itemId, originalValues);
-                this.showNotification(data.message || 'Update failed - values restored', 'error');
+
+                // Update discount percentage if available
+                if (data.cart_item.discount_percentage !== undefined && discountCell) {
+                    discountCell.textContent = `${data.cart_item.discount_percentage}%`;
+                }
             }
-        } catch (error) {
-            console.error('Error updating item:', error);
-            this.rollbackItemUpdate(itemId, originalValues);
-            this.showNotification('Network error - values restored', 'error');
+
+            this.updateTotals(data.cart_total);
+            this.recalculateTotals();
+        } catch (err) {
+            // console.error('Error updating item:', err);
+            this.rollbackItemUpdate(id, originalValues);
+            this.notify(err.message || 'Update failed - values restored', 'error');
         } finally {
-            if (updateButton) {
-                updateButton.disabled = false;
-                updateButton.innerHTML = '<i class="fas fa-save"></i>';
-                this.barcodeInput.focus();
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-save"></i>';
             }
+            this.focusBarcode();
         }
     }
 
-    async deleteCartItem(itemId) {
-        const row = document.getElementById(`cart-item-${itemId}`);
-        if (! row) {
-            this.showNotification('Item not found', 'error');
-            return;
+    async deleteItem(id) {
+        if (!confirm('Are you sure you want to remove this item?')) return;
+
+        const row = document.getElementById(`cart-item-${id}`);
+        if (!row) {
+            return this.notify('Item not found', 'error');
         }
 
-        const originalRowHTML = row.outerHTML;
-        const originalTotalItems = this.totalItems.textContent;
-        const originalTotalAmount = this.totalAmount.textContent;
-
-        // Show loading state
-        const deleteButton = row.querySelector(`.delete-item-btn[data-item-id="${itemId}"]`);
-        if (deleteButton) {
-            deleteButton.disabled = true;
-            deleteButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        const btn = row.querySelector('.delete-item-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         }
 
-        try { // Optimistic removal
-            row.style.opacity = '0.5';
+        row.style.opacity = '0.5';
 
-            const response = await fetch(this.urls.manageItem.replace('0', itemId), {
-                method: 'DELETE',
-                headers: { 'X-CSRFToken': this.csrfToken }
-            });
-
-            const data = await response.json();
-
-            if (data.status === 'success') {
-                this.showNotification('Item removed successfully', 'success');
-                row.remove();
-                this.updateTotalAmount(data.cart_total);
-                this.updateTotalItems(-1);
-            } else { // Rollback
-                row.style.opacity = '1';
-                if (deleteButton) {
-                    deleteButton.disabled = false;
-                    deleteButton.innerHTML = '<i class="fas fa-trash"></i>';
-                }
-                this.showNotification(data.message || 'Delete failed', 'error');
-            }
-        } catch (error) {
-            console.error('Error deleting item:', error);
-
-            // Rollback
-            row.style.opacity = '1';
-            if (deleteButton) {
-                deleteButton.disabled = false;
-                deleteButton.innerHTML = '<i class="fas fa-trash"></i>';
-            }
-            this.showNotification('Network error - item not removed', 'error');
-        } finally {
-            this.barcodeInput.focus();
-        }
-    }
-
-    async handleBarcodeSubmit(cartId, barcode) {
-        const originalTotalItems = this.totalItems.textContent;
-        const originalTotalAmount = this.totalAmount.textContent;
-        
         try {
-            const requestBody = { barcode, cart_id: parseInt(cartId), quantity: 1 };
-            
-            const response = await fetch(this.urls.scanBarcode, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': this.csrfToken
-                },
-                body: JSON.stringify(requestBody)
-            });
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Response error:', errorText);
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
-            
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                this.barcodeInput.value = '';
-                
-                if (!data.cart_item) {
-                    this.showNotification('Invalid response structure', 'error');
-                    return;
-                }
+            const data = await this.api(this.urls.manageItem.replace('0', id), 'DELETE');
 
-                if (data.type === 'Create') {
-                    const newItem = this.createCartItem(data.cart_item);
-                    // Add new items at the top
-                    if (this.cartItemsBody.firstChild) {
-                        this.cartItemsBody.insertBefore(newItem, this.cartItemsBody.firstChild);
-                    } else {
-                        this.cartItemsBody.appendChild(newItem);
-                    }
-                    this.updateTotalItems(1);
-                    this.showNotification('Item added successfully', 'success');
-                } else if (data.type === 'Update') {
-                    this.updateExistingCartItem(data.cart_item);
-                    this.showNotification('Item updated successfully', 'success');
+            if (data.status !== 'success') {
+                row.style.opacity = '1';
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-trash"></i>';
                 }
-                
-                if (data.cart_total !== undefined) {
-                    this.updateTotalAmount(data.cart_total);
-                }
-            } else {
-                this.showNotification(data.message, 'error');
+                throw new Error(data.message || 'Delete failed');
             }
-        } catch (error) {
-            console.error('Error in barcode submission:', error);
-            this.showNotification(`Error adding product to cart: ${error.message}`, 'error');
+
+            row.remove();
+            this.updateTotals(data.cart_total);
+            this.recalculateTotals();
+            this.notify('Item removed successfully', 'success');
+        } catch (err) {
+            console.error('Error deleting item:', err);
+            row.style.opacity = '1';
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-trash"></i>';
+            }
+            this.notify(err.message || 'Network error - item not removed', 'error');
         } finally {
-            this.barcodeInput.focus();
+            this.focusBarcode();
         }
     }
 
-    // Helper Functions
-    rollbackItemUpdate(itemId, originalValues) {
-        const row = document.getElementById(`cart-item-${itemId}`);
-        if (!row || !originalValues) 
-            return;
-        
+    /*** ───────── UI UPDATES ───────── ***/
+    updateCartRow(item) {
+        const row = document.getElementById(`cart-item-${item.id}`);
+        if (!row) {
+            return this.addCartRow(item);
+        }
 
-        const quantityInput = row.querySelector('.quantity-input');
+        const qtyInput = row.querySelector('.quantity-input');
+        const priceInput = row.querySelector('.price-input');
+        const amountCell = row.querySelector('.amount-cell');
+        const discountCell = row.querySelector('.discount-cell');
+        const priceToggleCell = row.querySelector('.price-toggle-cell');
+
+        if (qtyInput) qtyInput.value = item.quantity;
+        if (priceInput) priceInput.value = item.price;
+        if (amountCell) amountCell.textContent = this.format(item.amount);
+
+        if (discountCell) {
+            if (item.discount_percentage !== undefined) {
+                discountCell.textContent = `${item.discount_percentage}%`;
+            } else {
+                const selling = parseFloat(priceToggleCell?.dataset.sellingPrice) || 0;
+                const discount = this.calcDiscount(selling, item.price);
+                discountCell.textContent = `${discount.toFixed(2)}%`;
+            }
+        }
+
+        this.recalculateTotals();
+    }
+
+    addCartRow(data) {
+        const {
+            id,
+            quantity,
+            price,
+            amount,
+            product_variant: {
+                barcode = 'N/A',
+                brand = 'N/A',
+                simple_name: variantName = 'N/A',
+                mrp: sellingPrice = data.price || '0.00',
+                purchase_price: purchasePrice = '0.00',
+                discount_percentage: discount = 0,
+            } = {},
+        } = data;
+
+        // Calculate discount if not provided
+        let calculatedDiscount = discount;
+        if (sellingPrice > 0 && data.price) {
+            calculatedDiscount = this.calcDiscount(sellingPrice, data.price);
+        }
+
+        // Get current price toggle state (default to selling price)
+        const isShowingPurchasePrice = this.priceToggleState || window.cartPriceToggleState || false;
+        const displayPrice = isShowingPurchasePrice ? parseFloat(purchasePrice) : parseFloat(sellingPrice);
+        const priceDisplay = this.formatPriceAnimation(displayPrice);
+
+        const row = document.createElement('tr');
+        row.id = `cart-item-${id}`;
+        row.innerHTML = `
+            <td>${barcode}</td>
+            <td>${brand}</td>
+            <td>${variantName}</td>
+            <td class="price-toggle-cell"
+                data-selling-price="${sellingPrice}"
+                data-purchase-price="${purchasePrice}">
+                <span class="price-display">${priceDisplay}</span>
+            </td>
+            <td>
+                <input type="number" class="form-input quantity-input" value="${quantity}" 
+                       data-item-id="${id}" min="0.01" step="0.01" 
+                       title="Press Enter to update">
+            </td>
+            <td>
+                <input type="number" class="form-input price-input" value="${price}" 
+                       data-item-id="${id}" min="0" step="0.01" 
+                       title="Press Enter to update">
+            </td>
+            <td class="discount-cell">${calculatedDiscount.toFixed(2)}%</td>
+            <td class="amount-cell">${this.format(amount)}</td>
+            <td>
+                <button type="button" class="btn btn-primary update-item-btn" data-item-id="${id}" 
+                        title="Save changes">
+                    <i class="fas fa-save"></i>
+                </button>
+                <button type="button" class="btn btn-danger delete-item-btn" data-item-id="${id}" 
+                        title="Remove item">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        `;
+
+        // Add new items at the top
+        if (this.dom.body.firstChild) {
+            this.dom.body.insertBefore(row, this.dom.body.firstChild);
+        } else {
+            this.dom.body.appendChild(row);
+        }
+
+        this.recalculateTotals();
+    }
+
+    updateTotals(total) {
+        this.dom.totalAmount.textContent = this.format(total);
+        // Update cart button total if it exists
+        const cartButtonTotal = document.getElementById(`cart-button-total-${this.cartId}`);
+        if (cartButtonTotal) {
+            cartButtonTotal.textContent = this.format(total);
+        }
+        this.recalculateTotals();
+    }
+
+    /**
+     * Unified method to recalculate all totals (quantity and selling price)
+     * More efficient than separate methods - single DOM scan
+     */
+    recalculateTotals() {
+        if (!this.dom.body) return;
+
+        const rows = this.dom.body.querySelectorAll('tr');
+
+        if (rows.length === 0) {
+            if (this.dom.totalItems) this.dom.totalItems.textContent = '0';
+            if (this.dom.totalSelling) this.dom.totalSelling.textContent = this.format(0);
+            return;
+        }
+
+        let totalQty = 0;
+        let totalSelling = 0;
+
+        rows.forEach(row => {
+            const qtyInput = row.querySelector('.quantity-input');
+            const priceToggleCell = row.querySelector('.price-toggle-cell');
+
+            if (qtyInput && priceToggleCell) {
+                const qty = parseFloat(qtyInput.value) || 0;
+                const sell = parseFloat(priceToggleCell.dataset.sellingPrice) || 0;
+
+                if (!isNaN(qty)) {
+                    totalQty += qty;
+                }
+                if (!isNaN(qty) && !isNaN(sell) && qty > 0 && sell > 0) {
+                    totalSelling += qty * sell;
+                }
+            }
+        });
+
+        // Round and format
+        const roundedQty = Math.round(totalQty * 100) / 100;
+        const roundedSelling = Math.round(totalSelling * 100) / 100;
+
+        if (this.dom.totalItems) {
+            this.dom.totalItems.textContent = roundedQty.toFixed(2);
+        }
+        if (this.dom.totalSelling) {
+            this.dom.totalSelling.textContent = this.format(isNaN(roundedSelling) || !isFinite(roundedSelling) ? 0 : roundedSelling);
+        }
+    }
+
+    /**
+     * Legacy method for backward compatibility - returns totals data
+     * @deprecated Use recalculateTotals() instead
+     */
+    calculateTotals() {
+        if (!this.dom.body) {
+            return { totalItems: 0, totalQuantity: 0, quantityInputs: [], quantities: [] };
+        }
+
+        const rows = this.dom.body.querySelectorAll('tr');
+        const allQuantityInputs = this.dom.body.querySelectorAll('.quantity-input');
+        const quantityInputsArray = Array.from(allQuantityInputs);
+
+        const quantities = quantityInputsArray.map(input => parseFloat(input.value) || 0);
+        const totalQuantity = quantities.reduce((sum, qty) => sum + qty, 0);
+
+        return {
+            totalItems: rows.length,
+            totalQuantity,
+            quantityInputs: quantityInputsArray,
+            quantities,
+        };
+    }
+
+    rollbackItemUpdate(itemId, originalValues) {
+        if (!originalValues) return;
+
+        const row = document.getElementById(`cart-item-${itemId}`);
+        if (!row) {
+            console.warn(`Rollback failed: Item ${itemId} not found`);
+            return;
+        }
+
+        const qtyInput = row.querySelector('.quantity-input');
         const priceInput = row.querySelector('.price-input');
         const amountCell = row.querySelector('.amount-cell');
         const discountCell = row.querySelector('.discount-cell');
 
-        if (quantityInput && originalValues.quantity) {
-            quantityInput.value = originalValues.quantity;
+        if (qtyInput && originalValues.quantity) {
+            qtyInput.value = originalValues.quantity;
         }
         if (priceInput && originalValues.price) {
             priceInput.value = originalValues.price;
@@ -519,379 +660,126 @@ class CartManager {
         if (discountCell && originalValues.discount) {
             discountCell.textContent = originalValues.discount;
         }
-
         if (originalValues.totalAmount) {
-            this.totalAmount.textContent = originalValues.totalAmount;
-        }
-
-        console.log('Rolled back item values for item:', itemId);
-    }
-
-    updateExistingCartItem(cartItem) {
-        const existingRow = document.getElementById(`cart-item-${cartItem.id}`);
-
-        if (existingRow) {
-            const quantityInput = existingRow.querySelector('.quantity-input');
-            const amountCell = existingRow.querySelector('.amount-cell');
-            const discountCell = existingRow.querySelector('.discount-cell');
-
-            if (quantityInput) quantityInput.value = cartItem.quantity;
-            if (amountCell) amountCell.textContent = this.formatCurrency(cartItem.amount);
-            
-            // Update discount percentage - calculate if not provided
-            if (discountCell) {
-                if (cartItem.discount_percentage !== undefined) {
-                    discountCell.textContent = `${cartItem.discount_percentage}%`;
-                } else {
-                    // Calculate discount from selling price and current price
-                    const sellingPrice = parseFloat(existingRow.querySelector('td:nth-child(4)').textContent.replace(/[^\d.-]/g, '')) || 0;
-                    const currentPrice = parseFloat(cartItem.price) || 0;
-                    if (sellingPrice > 0) {
-                        const discount = Math.max(0, ((sellingPrice - currentPrice) / sellingPrice) * 100);
-                        discountCell.textContent = `${discount.toFixed(2)}%`;
-                    }
-                }
-            }
-        } else {
-            // Fallback: create new item if row not found
-            const newItem = this.createCartItem(cartItem);
-            if (this.cartItemsBody.firstChild) {
-                this.cartItemsBody.insertBefore(newItem, this.cartItemsBody.firstChild);
-            } else {
-                this.cartItemsBody.appendChild(newItem);
-            }
-            this.updateTotalItems(1);
-        }
-    }
-
-    createCartItem(data) {
-        const item = document.createElement('tr');
-        item.id = `cart-item-${
-            data.id
-        }`;
-
-        const {
-            product_variant: {
-                barcode = 'N/A',
-                brand = 'N/A',
-                simple_name: variantName = 'N/A',
-                mrp: sellingPrice = data.price || '0.00',
-                discount_percentage: discount = 0
-            } = {}
-        } = data;
-
-        // Calculate discount if not provided
-        let calculatedDiscount = discount;
-        if (sellingPrice > 0 && data.price) {
-            calculatedDiscount = Math.max(0, ((sellingPrice - data.price) / sellingPrice) * 100);
-        }
-
-        item.innerHTML = `
-            <td>${barcode}</td>
-            <td>${brand}</td>
-            <td>${variantName}</td>
-            <td>${
-            this.formatCurrency(sellingPrice)
-        }</td>
-            <td>
-                <input type="number" class="form-input quantity-input" value="${
-            data.quantity
-        }" 
-                       data-item-id="${
-            data.id
-        }" min="0.01" step="0.01" 
-                       title="Press Enter to update">
-            </td>
-            <td>
-                <input type="number" class="form-input price-input" value="${
-            data.price
-        }" 
-                       data-item-id="${
-            data.id
-        }" min="0" step="0.01" 
-                       title="Press Enter to update">
-            </td>
-            <td class="discount-cell">${calculatedDiscount.toFixed(2)}%</td>
-            <td class="amount-cell">${
-            this.formatCurrency(data.amount)
-        }</td>
-            <td>
-                <button type="button" class="btn btn-primary update-item-btn" data-item-id="${
-            data.id
-        }" 
-                        title="Save changes">
-                    <i class="fas fa-save"></i>
-                </button>
-                <button type="button" class="btn btn-danger delete-item-btn" data-item-id="${
-            data.id
-        }" 
-                        title="Remove item">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </td>
-        `;
-
-        return item;
-    }
-
-    updateRowAmount(itemId, quantity, price) {
-        const row = document.getElementById(`cart-item-${itemId}`);
-        if (row) {
-            const amount = (quantity * price).toFixed(2);
-            const amountCell = row.querySelector('.amount-cell');
-            if (amountCell) {
-                amountCell.textContent = this.formatCurrency(amount);
+            this.dom.totalAmount.textContent = originalValues.totalAmount;
+            // Also update cart button total
+            const cartButtonTotal = document.getElementById(`cart-button-total-${this.cartId}`);
+            if (cartButtonTotal) {
+                cartButtonTotal.textContent = originalValues.totalAmount;
             }
         }
+
+        console.warn(`Rolled back update for item ${itemId}`);
+        this.recalculateTotals();
     }
 
-    removeCartRow(itemId) {
-        const row = document.getElementById(`cart-item-${itemId}`);
-        if (row) {
-            row.remove();
-        }
-    }
-
-    updateTotalAmount(newTotal) {
-        this.totalAmount.textContent = this.formatCurrency(newTotal);
-    }
-
-    updateTotalItems(change) {
-        const current = parseInt(this.totalItems.textContent) || 0;
-        this.totalItems.textContent = current + change;
-    }
-
-    formatCurrency(amount) {
-        return this.currencyFormatter.format(amount);
-    }
-
-    createToastNotification(message, type) {
-        console.log(`${
-            type.toUpperCase()
-        }: ${message}`);
-
-        const toast = document.createElement('div');
-        toast.className = `toast toast-${type}`;
-        toast.textContent = message;
-        toast.style.cssText = `
-            position: fixed; top: 20px; right: 20px; z-index: 9999;
-            padding: 10px 20px; border-radius: 4px; color: white;
-            background: ${
-            type === 'success' ? '#28a745' : '#dc3545'
-        };
-            font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        `;
-
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 3000);
-    }
-
-    showNotification(message, type) {
-        if (typeof window.showNotification !== 'undefined') {
-            window.showNotification(message, type);
-        } else {
-            this.createToastNotification(message, type);
-        }
-    }
-
-    // Cart Options Methods
-    showConfirmModal(title, message, onConfirm) {
-        const modal = document.getElementById('confirmModal');
-        const modalTitle = document.getElementById('confirmModalLabel');
-        const modalBody = document.getElementById('confirmModalBody');
-        const confirmBtn = document.getElementById('confirmActionBtn');
-
-        if (modal && modalTitle && modalBody && confirmBtn) {
-            modalTitle.textContent = title;
-            modalBody.textContent = message;
-            
-            // Remove existing event listeners
-            const newConfirmBtn = confirmBtn.cloneNode(true);
-            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
-            
-            // Add new event listener
-            newConfirmBtn.addEventListener('click', () => {
-                onConfirm();
-                this.hideModal(modal);
-            });
-
-            // Show modal
-            const bootstrapModal = new bootstrap.Modal(modal);
-            bootstrapModal.show();
-        }
-    }
-
-    hideModal(modal) {
-        const bootstrapModal = bootstrap.Modal.getInstance(modal);
-        if (bootstrapModal) {
-            bootstrapModal.hide();
-        }
-    }
-
+    /*** ───────── CART ACTIONS ───────── ***/
     async archiveCart() {
         try {
-            const response = await fetch(this.urls.archiveCart, {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': this.csrfToken,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            const data = await response.json();
-            
+            const data = await this.api(this.urls.archiveCart, 'POST');
             if (data.status === 'success') {
-                this.showNotification('Cart archived successfully', 'success');
-                // Redirect to main cart page after a short delay
-                setTimeout(() => {
-                    window.location.href = '/cart/';
-                }, 1500);
+                this.notify('Cart archived successfully', 'success');
+                setTimeout(() => (window.location.href = '/cart/'), 1500);
             } else {
-                this.showNotification(data.message || 'Failed to archive cart', 'error');
+                this.notify(data.message || 'Failed to archive cart', 'error');
             }
-        } catch (error) {
-            console.error('Error archiving cart:', error);
-            this.showNotification('Failed to archive cart', 'error');
+        } catch (err) {
+            console.error('Error archiving cart:', err);
+            this.notify('Failed to archive cart', 'error');
         }
     }
 
     async clearCart() {
         try {
-            const response = await fetch(this.urls.clearCart, {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': this.csrfToken,
-                    'Content-Type': 'application/json',
-                },
-            });
-
-            const data = await response.json();
-            
+            const data = await this.api(this.urls.clearCart, 'POST');
             if (data.status === 'success') {
-                this.showNotification('Cart cleared successfully', 'success');
-                // Clear the table body
-                if (this.cartItemsBody) {
-                    this.cartItemsBody.innerHTML = '';
+                this.notify('Cart cleared successfully', 'success');
+                if (this.dom.body) {
+                    this.dom.body.innerHTML = '';
                 }
-                // Update totals
-                this.updateTotalAmount(0);
-                this.updateTotalItems(-parseInt(this.totalItems.textContent || 0));
+                this.updateTotals(0);
+                this.recalculateTotals();
             } else {
-                this.showNotification(data.message || 'Failed to clear cart', 'error');
+                this.notify(data.message || 'Failed to clear cart', 'error');
             }
-        } catch (error) {
-            console.error('Error clearing cart:', error);
-            this.showNotification('Failed to clear cart', 'error');
+        } catch (err) {
+            console.error('Error clearing cart:', err);
+            this.notify('Failed to clear cart', 'error');
         }
     }
 
-    printCart() {
-        // Create a print-friendly version of the cart
-        const printWindow = window.open('', '_blank');
-        const cartData = this.getCartDataForPrint();
-        
-        printWindow.document.write(`
-            <html>
-                <head>
-                    <title>Cart - ${this.cartId}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 20px; }
-                        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                        th { background-color: #f2f2f2; }
-                        .total { font-weight: bold; font-size: 1.2em; }
-                    </style>
-                </head>
-                <body>
-                    <h1>Cart Details</h1>
-                    <p><strong>Cart ID:</strong> ${this.cartId}</p>
-                    <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-                    ${cartData}
-                    <div class="total">
-                        <p><strong>Total Items:</strong> ${this.totalItems.textContent}</p>
-                        <p><strong>Total Amount:</strong> ${this.totalAmount.textContent}</p>
-                    </div>
-                </body>
-            </html>
-        `);
-        
-        printWindow.document.close();
-        printWindow.print();
+    /*** ───────── UI UTILITIES ───────── ***/
+    confirm(title, msg, cb) {
+        const modal = document.getElementById('confirmModal');
+        if (!modal) return cb();
+
+        const modalTitle = modal.querySelector('.modal-title') || document.getElementById('confirmModalLabel');
+        const modalBody = modal.querySelector('.modal-body') || document.getElementById('confirmModalBody');
+        const confirmBtn = modal.querySelector('#confirmActionBtn') || document.getElementById('confirmActionBtn');
+
+        if (!modalTitle || !modalBody || !confirmBtn) return cb();
+
+        modalTitle.textContent = title;
+        modalBody.textContent = msg;
+
+        // Simplified: Use onclick for cleaner lifecycle
+        confirmBtn.onclick = () => {
+            cb();
+            const bootstrapModal = bootstrap.Modal.getInstance(modal);
+            if (bootstrapModal) {
+                bootstrapModal.hide();
+            }
+        };
+
+        // Show modal
+        const bootstrapModal = new bootstrap.Modal(modal);
+        bootstrapModal.show();
     }
 
-    exportCart() {
-        // Export cart data as CSV
-        const cartData = this.getCartDataForExport();
-        const csvContent = this.convertToCSV(cartData);
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        
-        if (link.download !== undefined) {
-            const url = URL.createObjectURL(blob);
-            link.setAttribute('href', url);
-            link.setAttribute('download', `cart_${this.cartId}_${new Date().toISOString().split('T')[0]}.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+    initDropdown() {
+        const toggle = document.getElementById('cartOptionsDropdown');
+        const menu = document.querySelector('.cart-dropdown .dropdown-menu');
+        if (!toggle || !menu) return;
+
+        // Try Bootstrap first
+        if (typeof bootstrap !== 'undefined') {
+            new bootstrap.Dropdown(toggle);
+            return;
         }
-    }
 
-    getCartDataForPrint() {
-        const rows = this.cartItemsBody.querySelectorAll('tr');
-        let html = '<table><thead><tr><th>Barcode</th><th>Product</th><th>Variant</th><th>Quantity</th><th>Price</th><th>Amount</th></tr></thead><tbody>';
-        
-        rows.forEach(row => {
-            const cells = row.querySelectorAll('td');
-            if (cells.length >= 8) {
-                html += `<tr>
-                    <td>${cells[0].textContent}</td>
-                    <td>${cells[1].textContent}</td>
-                    <td>${cells[2].textContent}</td>
-                    <td>${cells[4].querySelector('input')?.value || cells[4].textContent}</td>
-                    <td>${cells[5].querySelector('input')?.value || cells[5].textContent}</td>
-                    <td>${cells[7].textContent}</td>
-                </tr>`;
+        // Fallback: manual dropdown toggle
+        toggle.addEventListener('click', e => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const isOpen = menu.classList.contains('show');
+
+            // Close all other dropdowns
+            document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
+
+            // Toggle current dropdown
+            if (!isOpen) {
+                menu.classList.add('show');
             }
         });
-        
-        html += '</tbody></table>';
-        return html;
-    }
 
-    getCartDataForExport() {
-        const rows = this.cartItemsBody.querySelectorAll('tr');
-        const data = [];
-        
-        // Add header
-        data.push(['Barcode', 'Product', 'Variant', 'Quantity', 'Price', 'Amount']);
-        
-        // Add data rows
-        rows.forEach(row => {
-            const cells = row.querySelectorAll('td');
-            if (cells.length >= 8) {
-                data.push([
-                    cells[0].textContent,
-                    cells[1].textContent,
-                    cells[2].textContent,
-                    cells[4].querySelector('input')?.value || cells[4].textContent,
-                    cells[5].querySelector('input')?.value || cells[5].textContent,
-                    cells[7].textContent
-                ]);
+        // Close dropdown when clicking outside
+        document.addEventListener('click', e => {
+            if (!toggle.contains(e.target) && !menu.contains(e.target)) {
+                menu.classList.remove('show');
             }
         });
-        
-        return data;
-    }
 
-    convertToCSV(data) {
-        return data.map(row => 
-            row.map(cell => `"${cell}"`).join(',')
-        ).join('\n');
+        // Close dropdown when pressing Escape
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                menu.classList.remove('show');
+            }
+        });
     }
 }
 
 // Initialize cart manager when DOM is ready
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', () => {
     window.cartManager = new CartManager();
 });

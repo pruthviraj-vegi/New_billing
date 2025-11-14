@@ -1,18 +1,18 @@
 function setupModal(id_input, name, model_link, form_id, create_url) { // 1. Add "Add" link to the label
     var idModelSelect = document.getElementById(id_input);
-    if (! idModelSelect) {
+    if (!idModelSelect) {
         console.error('Select field not found:', id_input);
         return;
     }
 
     var formInnerDiv = idModelSelect.closest(".form-group");
-    if (! formInnerDiv) {
+    if (!formInnerDiv) {
         console.error('Form group not found for:', id_input);
         return;
     }
 
     var label = formInnerDiv.querySelector("label");
-    if (! label) {
+    if (!label) {
         console.error('Label not found for:', id_input);
         return;
     }
@@ -29,15 +29,15 @@ function setupModal(id_input, name, model_link, form_id, create_url) { // 1. Add
     var modal = document.getElementById(model_link);
     modal.addEventListener('shown.bs.modal', function () {
         var firstInput = modal.querySelector('input[type="text"], input[type="email"], input[type="number"], textarea');
-        if (firstInput) 
+        if (firstInput)
             firstInput.focus();
-        
+
     });
 
     modal.addEventListener('hide.bs.modal', function () {
-        if (document.activeElement) 
+        if (document.activeElement)
             document.activeElement.blur();
-        
+
     });
 
     // 2. Setup AJAX form submission
@@ -66,7 +66,7 @@ function setupModal(id_input, name, model_link, form_id, create_url) { // 1. Add
                             if ($(selectElement).hasClass('select2-hidden-accessible')) {
                                 $(selectElement).trigger('change.select2');
                             } else {
-                                selectElement.dispatchEvent(new Event('change', {bubbles: true}));
+                                selectElement.dispatchEvent(new Event('change', { bubbles: true }));
                             }
                         } else {
                             console.error('Select element not found:', id_input);

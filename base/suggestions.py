@@ -7,6 +7,7 @@ from customer.models import Customer
 from invoice.models import Invoice
 from inventory.models import Product, ProductVariant
 from rapidfuzz import process
+from supplier.models import Supplier
 
 
 # Precompiled regex for speed
@@ -31,30 +32,6 @@ def get_related_words(query, list_of_words, limit=10, score_cutoff=60):
 
     # Extract only words (discard scores)
     return [word for word, score, _ in matches]
-
-
-# def get_related_words(query, list_of_words):
-#     if not query or len(query) < 2 or not list_of_words:
-#         return []
-
-#     if not isinstance(list_of_words, list):
-#         return []
-
-#     list_of_words = list(set(list_of_words))
-
-#     fuzzy_matches = process.extract(query.lower(), list_of_words, limit=10)
-
-#     # Filter matches with score > 60 and return only words
-#     suggestions = []
-#     seen_words = set()
-#     for word, score in fuzzy_matches:
-#         if score > 60 and word not in seen_words:
-#             suggestions.append(word)
-#             seen_words.add(word)
-#             if len(suggestions) >= 5:
-#                 break
-
-#     return suggestions
 
 
 def get_search_words(
@@ -175,6 +152,34 @@ def product_variant_all_suggestions(request):
             "product__category__name",
         ),
         cache_key="product_variant_search_words",
+        cache_timeout=3600,
+    )
+
+    return JsonResponse({"success": True, "data": suggestions})
+
+
+def supplier_all_suggestions(request):
+    query = request.GET.get("q", "").strip()
+
+    if not query or len(query) < 2:
+        return JsonResponse({"success": True, "data": []})
+
+    suggestions = get_search_words(
+        query=query,
+        model=Supplier,
+        fields=(
+            "name",
+            "phone",
+            "email",
+            "gstin",
+            "first_line",
+            "second_line",
+            "city",
+            "state",
+            "pincode",
+            "country",
+        ),
+        cache_key="supplier_search_words",
         cache_timeout=3600,
     )
 

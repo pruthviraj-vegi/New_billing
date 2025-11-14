@@ -7,7 +7,7 @@ from django.contrib import messages
 from django.urls import reverse_lazy
 from django.views.generic.edit import CreateView, UpdateView, DeleteView
 from django.contrib.auth import get_user_model
-from .forms import CustomUserCreationForm, CustomUserChangeForm
+from .forms import CustomUserForm, PasswordResetForm
 import json
 from django.utils import timezone
 from django.contrib.sessions.models import Session
@@ -30,6 +30,7 @@ def home(request):
     search_query = request.GET.get("search", "")
     role_filter = request.GET.get("role", "")
     status_filter = request.GET.get("status", "")
+    commission_filter = request.GET.get("commission", "")
     sort_by = request.GET.get("sort", "-date_joined")
 
     # Start with all users
@@ -41,6 +42,7 @@ def home(request):
             Q(full_name__icontains=search_query)
             | Q(phone_number__icontains=search_query)
             | Q(email__icontains=search_query)
+            | Q(address__icontains=search_query)
         )
 
     # Apply role filter
@@ -53,6 +55,12 @@ def home(request):
     elif status_filter == "inactive":
         users = users.filter(is_active=False)
 
+    # Apply commission filter
+    if commission_filter == "yes":
+        users = users.filter(commision=True)
+    elif commission_filter == "no":
+        users = users.filter(commision=False)
+
     # Apply sorting
     if sort_by in [
         "full_name",
@@ -63,6 +71,8 @@ def home(request):
         "-phone_number",
         "role",
         "-role",
+        "commision",
+        "-commision",
     ]:
         users = users.order_by(sort_by)
     else:
@@ -73,6 +83,7 @@ def home(request):
         "search_query": search_query,
         "role_filter": role_filter,
         "status_filter": status_filter,
+        "commission_filter": commission_filter,
         "sort_by": sort_by,
         "roles": User.Roles.choices,
     }
@@ -82,7 +93,7 @@ def home(request):
 
 class CreateUser(LoginRequiredMixin, CreateView):
     model = User
-    form_class = CustomUserCreationForm
+    form_class = CustomUserForm
     template_name = "user/form.html"
     success_url = reverse_lazy("user:home")
 
@@ -108,7 +119,7 @@ class CreateUser(LoginRequiredMixin, CreateView):
 
 class EditUser(LoginRequiredMixin, UpdateView):
     model = User
-    form_class = CustomUserChangeForm
+    form_class = CustomUserForm
     template_name = "user/form.html"
     success_url = reverse_lazy("user:home")
 
@@ -159,8 +170,12 @@ class DeleteUser(LoginRequiredMixin, DeleteView):
 def user_detail(request, pk):
     """View user details."""
     user = get_object_or_404(User, id=pk)
-    recent_logins = LoginEvent.objects.filter(user=user, event_type=LoginEvent.EventType.LOGIN)[:10]
-    return render(request, "user/detail.html", {"user": user, "recent_logins": recent_logins})
+    recent_logins = LoginEvent.objects.filter(
+        user=user, event_type=LoginEvent.EventType.LOGIN
+    )[:10]
+    return render(
+        request, "user/detail.html", {"user": user, "recent_logins": recent_logins}
+    )
 
 
 @login_required
@@ -171,7 +186,6 @@ def user_delete(request, user_id):
         user.delete()
         messages.success(request, "User deleted successfully!")
         return redirect("user:home")
-
 
     return redirect("user:home")
 
@@ -212,7 +226,10 @@ def search_users_ajax(request):
         Q(full_name__icontains=search_query)
         | Q(phone_number__icontains=search_query)
         | Q(email__icontains=search_query)
-    )[:10]  # Limit to 10 results
+        | Q(address__icontains=search_query)
+    )[
+        :10
+    ]  # Limit to 10 results
 
     data = []
     for user in users:
@@ -237,10 +254,10 @@ def change_user_status(request, user_id):
         user = get_object_or_404(User, id=user_id)
         user.is_active = not user.is_active
         user.save()
-        
+
         status = "activated" if user.is_active else "deactivated"
         messages.success(request, f"User '{user.full_name}' {status} successfully!")
-        
+
         return redirect("user:home")
 
     return redirect("user:home")
@@ -260,21 +277,38 @@ def download_logins(request):
     response["Content-Disposition"] = 'attachment; filename="login_events.csv"'
 
     writer = csv.writer(response)
-    writer.writerow(["occurred_at", "event", "user_id", "full_name", "phone", "ip", "user_agent", "session_key"])
+    writer.writerow(
+        [
+            "occurred_at",
+            "event",
+            "user_id",
+            "full_name",
+            "phone",
+            "ip",
+            "user_agent",
+            "session_key",
+        ]
+    )
 
     events = LoginEvent.objects.select_related("user").order_by("-occurred_at")[:5000]
     for ev in events:
         user = ev.user
-        writer.writerow([
-            ev.occurred_at.isoformat(sep=" ") if hasattr(ev.occurred_at, "isoformat") else ev.occurred_at,
-            ev.event_type,
-            user.id if user else "",
-            getattr(user, "full_name", "") if user else "",
-            getattr(user, "phone_number", "") if user else "",
-            ev.ip_address or "",
-            ev.user_agent or "",
-            ev.session_key or "",
-        ])
+        writer.writerow(
+            [
+                (
+                    ev.occurred_at.isoformat(sep=" ")
+                    if hasattr(ev.occurred_at, "isoformat")
+                    else ev.occurred_at
+                ),
+                ev.event_type,
+                user.id if user else "",
+                getattr(user, "full_name", "") if user else "",
+                getattr(user, "phone_number", "") if user else "",
+                ev.ip_address or "",
+                ev.user_agent or "",
+                ev.session_key or "",
+            ]
+        )
 
     return response
 
@@ -286,7 +320,9 @@ def sessions_overview(request):
     active_sessions = Session.objects.filter(expire_date__gt=now)
 
     sessions_data = []
-    session_key_to_is_current = {request.session.session_key: True} if request.session.session_key else {}
+    session_key_to_is_current = (
+        {request.session.session_key: True} if request.session.session_key else {}
+    )
 
     for session in active_sessions:
         data = session.get_decoded()
@@ -302,19 +338,23 @@ def sessions_overview(request):
         user_agent = data.get("user_agent")
         last_activity = data.get("last_activity")
 
-        sessions_data.append({
-            "session_key": session.session_key,
-            "user": user,
-            "last_login": user.last_login,
-            "expire_date": session.expire_date,
-            "is_current": session_key_to_is_current.get(session.session_key, False),
-            "ip_address": ip_address,
-            "user_agent": user_agent,
-            "last_activity": last_activity,
-        })
+        sessions_data.append(
+            {
+                "session_key": session.session_key,
+                "user": user,
+                "last_login": user.last_login,
+                "expire_date": session.expire_date,
+                "is_current": session_key_to_is_current.get(session.session_key, False),
+                "ip_address": ip_address,
+                "user_agent": user_agent,
+                "last_activity": last_activity,
+            }
+        )
 
     # Sort by user then expire_date desc
-    sessions_data.sort(key=lambda s: (s["user"].full_name or "", -int(s["expire_date"].timestamp())))
+    sessions_data.sort(
+        key=lambda s: (s["user"].full_name or "", -int(s["expire_date"].timestamp()))
+    )
 
     context = {
         "sessions": sessions_data,
@@ -349,3 +389,30 @@ def invalidate_session(request, session_key):
     except Session.DoesNotExist:
         messages.error(request, "Session not found.")
     return redirect("user:sessions")
+
+
+@login_required
+def reset_user_password(request, user_id):
+    """Reset password for a specific user."""
+    user = get_object_or_404(User, id=user_id)
+
+    if request.method == "POST":
+        form = PasswordResetForm(request.POST)
+        if form.is_valid():
+            new_password = form.cleaned_data["new_password"]
+            user.set_password(new_password)
+            user.save()
+            messages.success(
+                request, f"Password reset successfully for {user.full_name}!"
+            )
+            return redirect("user:detail", pk=user_id)
+    else:
+        form = PasswordResetForm()
+
+    context = {
+        "form": form,
+        "user": user,
+        "title": f"Reset Password - {user.full_name}",
+    }
+
+    return render(request, "user/reset_password.html", context)

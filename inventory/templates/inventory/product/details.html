@@ -29,7 +29,7 @@
         <span class="breadcrumb-active">{{ product.display_name }}</span>
     </nav>
     <!-- Main Layout -->
-    <div class="col d-flex flex-row gap-2">
+    <div class="col d-flex flex-row">
         <!-- Left Column - Product Details -->
         <div class="col-md-2 d-flex flex-column gap-2">
             <!-- Product Details Column -->
@@ -125,7 +125,7 @@
             </div>
         </div>
         <!-- Right Column - Tables -->
-        <div class="col-md-10">
+        <div class="col-md-10 d-flex flex-column gap-2 ps-1">
             <!-- Product Variants Table -->
             <div class="table-section" id="variantsSection">
                 <div class="table-header">
@@ -244,7 +244,7 @@
                         <i class="fas fa-box-open"></i>
                         <h4>No Variants Found</h4>
                         <p>This product doesn't have any variants yet.</p>
-                        <a href="{% url 'inventory:product_create' %}" class="btn btn-primary">
+                        <a href="{% url 'inventory_variant:create' product.id %}" class="btn btn-primary">
                             <i class="fas fa-plus"></i>
                             Add First Variant
                         </a>

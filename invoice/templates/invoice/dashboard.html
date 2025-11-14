@@ -4,22 +4,9 @@
 
 {% block title %}Invoice Dashboard{% endblock %}
 
-{% block extra_css %}
-<style>
-    .page-header {
-        position: sticky;
-        top: var(--navbar-height);
-        z-index: 100;
-        
-    } 
-</style>
-
-
-{% endblock extra_css %}
-
 {% block content %}
 <!-- Page Header -->
-<div class="page-header">
+<div class="page-header dashboard-page-header">
     <h2 class="page-title">Invoice Dashboard</h2>
     <div class="page-actions">
         <!-- Date Filter Dropdown -->
@@ -98,7 +85,7 @@
             </div>
             <div class="stat-content">
                 <h3 class="stat-number" id="totalProfit">₹0</h3>
-                <p class="stat-label">Total Profit</p>
+                <p class="stat-label">Amount</p>
             </div>
         </div>
 
@@ -121,7 +108,7 @@
         <div class="analytics-grid">
             <div class="analytics-card">
                 <h3 class="analytics-title">Payment Status</h3>
-                <div class="analytics-content">
+                <div class="analytics-content" id ="payment_status">
                     <div class="chart-container">
                         <canvas id="paymentStatusChart" width="280" height="180"></canvas>
                     </div>
@@ -133,7 +120,7 @@
 
             <div class="analytics-card">
                 <h3 class="analytics-title">Payment Type</h3>
-                <div class="analytics-content">
+                <div class="analytics-content" id="payment_type">
                     <div class="chart-container">
                         <canvas id="paymentTypeChart" width="280" height="180"></canvas>
                     </div>
@@ -145,7 +132,7 @@
 
             <div class="analytics-card">
                 <h3 class="analytics-title">Product Categories</h3>
-                <div class="analytics-content">
+                <div class="analytics-content" id="category">
                     <div class="chart-container">
                         <canvas id="categoryChart" width="280" height="180"></canvas>
                     </div>
@@ -160,7 +147,7 @@
     <!-- Revenue Comparison Chart -->
     <div class="activity-section">
         <h2 class="section-title">Revenue Comparison</h2>
-        <div class="comparison-chart-container">
+        <div class="comparison-chart-container" id="comparison_chart">
             <div class="comparison-chart-header">
                 
                 <div class="chart-info">
@@ -220,14 +207,165 @@
 {% block extra_js %}
 <!-- Chart.js Library -->
 <script src="{% static 'assets/plugins/chart/chart-4.5.js' %}"></script>
-<!-- Reusable Dashboard Charts Module -->
-<script src="{% static 'js/dashboard-charts.js' %}"></script>
+<!-- Chart Utilities - All chart functions in one file -->
+<script src="{% static 'js/chart-utils.js' %}"></script>
+
 <script>
-    window.addEventListener('DOMContentLoaded', function() {
-        DashboardCharts.init({
-            fetchUrl: '{% url "invoice:dashboard_fetch" %}',
-            currentFilter: '{{ date_filter|default:"today" }}'
+    // Invoice Dashboard - Page Specific Code
+    (function() {
+        const fetchUrl = '{% url "invoice:dashboard_fetch" %}';
+        const currentFilter = '{{ date_filter|default:"today" }}';
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-IN', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(amount);
+        }
+
+        function updateStats(stats) {
+            const el = document.getElementById('totalInvoices');
+            if (el) el.textContent = stats.total_invoices || 0;
+            
+            const el2 = document.getElementById('totalAmount');
+            if (el2) el2.textContent = '₹' + formatCurrency(stats.total_amount || 0);
+            
+            const el3 = document.getElementById('netAmount');
+            if (el3) el3.textContent = '₹' + formatCurrency(stats.net_amount || 0);
+            
+            const el4 = document.getElementById('totalProfit');
+            if (el4) el4.textContent = '₹' + formatCurrency(stats.total_profit || 0);
+            
+            const el5 = document.getElementById('totalDiscount');
+            if (el5) el5.textContent = '₹' + formatCurrency(stats.total_discount || 0);
+        }
+
+        async function loadDashboardData() {
+            const dateFilter = document.getElementById('dateFilter');
+            const loadingEl = document.getElementById('dashboardLoading');
+            const errorEl = document.getElementById('dashboardError');
+            
+            if (errorEl) errorEl.style.display = 'none';
+            if (dateFilter) {
+                dateFilter.style.opacity = '0.7';
+                dateFilter.disabled = true;
+            }
+
+            try {
+                const dateFilterValue = dateFilter ? dateFilter.value : currentFilter;
+                const params = new URLSearchParams({ date_filter: dateFilterValue });
+                const response = await fetch(fetchUrl + '?' + params.toString());
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Failed to load');
+
+                // Update stats
+                updateStats(data.stats);
+
+                // Update charts - just pass data, config is already stored
+                if (data.payment_status_breakdown && data.payment_status_breakdown.length) {
+                    payment_status.update({
+                        data: data.payment_status_breakdown.map(item => ({
+                            label: item.payment_status,
+                            value: item.count,
+                            amount: item.amount
+                        }))
+                    });
+                }
+
+                if (data.payment_type_breakdown && data.payment_type_breakdown.length) {
+                    payment_type.update({
+                        data: data.payment_type_breakdown.map(item => ({
+                            label: item.payment_type,
+                            value: item.count,
+                            amount: item.amount
+                        }))
+                    });
+                }
+
+                if (data.category_breakdown && data.category_breakdown.length) {
+                    category.update({
+                        data: data.category_breakdown.map(item => ({
+                            label: item.category_name,
+                            value: item.count,
+                            amount: item.amount
+                        }))
+                    });
+                }
+
+                // Update comparison chart - just pass comparison data, everything handled automatically
+                if (data.comparison_data) {
+                    const metricSelect = document.getElementById('comparisonMetric');
+                    const metric = metricSelect ? metricSelect.value : 'amount';
+                    
+                    comparison_chart.update({
+                        comparison_data: data.comparison_data,
+                        metric: metric
+                    });
+                    
+                    // Handle metric change
+                    if (metricSelect) {
+                        metricSelect.onchange = null; // Remove old handler
+                        metricSelect.addEventListener('change', loadDashboardData);
+                    }
+                }
+
+            } catch (err) {
+                console.error('Dashboard loading error:', err);
+                if (errorEl) errorEl.style.display = 'block';
+            } finally {
+                if (dateFilter) {
+                    dateFilter.style.opacity = '1';
+                    dateFilter.disabled = false;
+                }
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', function() {
+            // Bind charts to containers - auto-detects canvas and legend, stores config
+            Charts.bindChart('payment_status', {
+                key: 'invoice_payment_status',
+                colors: Charts.getColors('blue').colors,
+                colorsHover: Charts.getColors('blue').colorsHover
+            });
+            
+            Charts.bindChart('payment_type', {
+                key: 'invoice_payment_type',
+                colors: Charts.getColors('cyan').colors,
+                colorsHover: Charts.getColors('cyan').colorsHover
+            });
+            
+            Charts.bindChart('category', {
+                key: 'invoice_category',
+                colors: Charts.getColors('green').colors,
+                colorsHover: Charts.getColors('green').colorsHover
+            });
+            
+            // Bind comparison chart (line chart)
+            Charts.bindChart('comparison_chart', {
+                key: 'invoice_comparison',
+                type: 'line',
+                options: {
+                    formatYAxis: 'amount',
+                    gridColor: 'rgba(148, 163, 184, 0.1)',
+                    showLegend: false
+                }
+            });
+            
+            // Set initial date filter
+            const dateFilter = document.getElementById('dateFilter');
+            if (dateFilter && currentFilter) {
+                dateFilter.value = currentFilter;
+            }
+            
+            // Load initial data
+            loadDashboardData();
+            
+            // Handle date filter change
+            if (dateFilter) {
+                dateFilter.addEventListener('change', loadDashboardData);
+            }
         });
-    });
+    })();
 </script>
 {% endblock extra_js %}

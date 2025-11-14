@@ -15,6 +15,10 @@
                 <i class="fas fa-edit"></i>
                 Edit User
             </a>
+            <a href="{% url 'user:reset_password' user.id %}" class="btn btn-warning">
+                <i class="fas fa-key"></i>
+                Reset Password
+            </a>
             {% if user.is_active %}
                 <form method="post" action="{% url 'user:change_status' user.id %}" class="d-inline" style="display: inline;">
                     {% csrf_token %}
@@ -195,6 +199,10 @@
             <a href="{% url 'user:edit' user.id %}" class="btn btn-primary">
                 <i class="fas fa-edit"></i>
                 Edit User
+            </a>
+            <a href="{% url 'user:reset_password' user.id %}" class="btn btn-warning">
+                <i class="fas fa-key"></i>
+                Reset Password
             </a>
             <a href="{% url 'user:home' %}" class="btn btn-outline">
                 <i class="fas fa-arrow-left"></i>

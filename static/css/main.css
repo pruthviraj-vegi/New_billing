@@ -1,3 +1,102 @@
+/* Generic Modal (Theme-aware, reusable) */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1050;
+}
+
+.modal-overlay .modal-content {
+    width: min(520px, 92vw);
+    border-radius: 12px;
+    background: var(--surface-1, #ffffff);
+    color: var(--text-color, #111827);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    padding: 24px 22px;
+    border: 1px solid var(--border-color, #e5e7eb);
+}
+
+.modal-overlay .modal-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 10px auto;
+    background: var(--warning-50, #fff7ed);
+    color: var(--warning-600, #d97706);
+}
+
+.modal-overlay .modal-icon i {
+    font-size: 20px;
+}
+
+.modal-overlay .modal-title {
+    text-align: center;
+    font-weight: 600;
+    font-size: 18px;
+    margin-bottom: 6px;
+}
+
+.modal-overlay .modal-message {
+    text-align: center;
+    font-size: 14px;
+    color: var(--muted-700, #4b5563);
+    margin-bottom: 18px;
+}
+
+.modal-overlay .modal-buttons {
+    margin-top: 14px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.modal-overlay .modal-btn {
+    appearance: none;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.modal-overlay .modal-btn:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--focus-ring, rgba(59, 130, 246, 0.35));
+}
+
+.modal-overlay .modal-btn-cancel {
+    background: var(--surface-2, #f9fafb);
+    color: var(--text-color, #111827);
+    border-color: var(--border-color, #e5e7eb);
+}
+
+.modal-overlay .modal-btn-cancel:hover {
+    background: var(--surface-3, #f3f4f6);
+}
+
+.modal-overlay .modal-btn-continue {
+    background: var(--primary-600, #2563eb);
+    color: #ffffff;
+}
+
+.modal-overlay .modal-btn-continue:hover {
+    background: var(--primary-700, #1d4ed8);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    .modal-overlay .modal-btn {
+        transition: none;
+    }
+}
+
 /* ========================================
    BILLING SYSTEM - MAIN CSS (v3 - Cleaned & Consolidated)
    ======================================== */
@@ -19,7 +118,7 @@
     --bg-surface-hover: #f8fafc;
     --border-color: #e2e8f0;
     --border-color-focus: #2563eb;
-    --font-family: 'Inter', sans-serif;
+    --font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
     --font-size-base: 16px;
     --heading-weight: 600;
     --topbar-height: 50px;
@@ -273,7 +372,7 @@ body {
    ======================================== */
 .notification {
     position: fixed;
-    top: calc(var(--topbar-height) + var(--navbar-height) + 1rem);
+    top: calc(var(--topbar-height));
     right: 1rem;
     background: var(--bg-surface);
     color: var(--text-primary);
@@ -293,19 +392,33 @@ body {
 }
 
 .notification-info {
-    border-left: 4px solid var(--primary);
+    background: var(--primary);
+    border-left: 4px solid var(--bg-surface);
+    color: var(--text-on-primary);
 }
 
 .notification-success {
-    border-left: 4px solid var(--success);
+    background: var(--success);
+    border-left: 4px solid var(--bg-surface);
 }
 
 .notification-warning {
-    border-left: 4px solid var(--warning);
+    background: var(--warning);
+    border-left: 4px solid var(--bg-surface);
 }
 
 .notification-error {
-    border-left: 4px solid var(--danger);
+    background: var(--danger);
+    border-left: 4px solid var(--bg-surface);
+}
+
+/* Dark theme notifications */
+[data-theme="dark"] .notification {
+    box-shadow: var(--shadow-md);
+}
+
+[data-theme="dark"] .notification-warning {
+    color: var(--text-primary);
 }
 
 .navbar {
@@ -613,6 +726,12 @@ body {
     box-shadow: var(--shadow-sm);
 }
 
+.dashboard-page-header {
+    position: sticky;
+    top: var(--navbar-height);
+    z-index: 100;
+}
+
 .page-title {
     font-size: 1rem;
     font-weight: var(--heading-weight);
@@ -658,6 +777,7 @@ body {
 .btn-primary:hover {
     background: var(--primary-hover);
     border-color: var(--primary-hover);
+    color: var(--text-on-primary);
 }
 
 .btn-sm {
@@ -669,6 +789,49 @@ body {
 .btn-lg {
     padding: 1rem 2rem;
     font-size: 1.125rem;
+}
+
+/* Button submitting state - prevents double clicks */
+.btn.submitting,
+button.submitting,
+input[type="submit"].submitting {
+    opacity: 0.7;
+    cursor: not-allowed;
+    pointer-events: none;
+    position: relative;
+}
+
+.btn.submitting:hover,
+button.submitting:hover,
+input[type="submit"].submitting:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+.btn.submitting i.fa-spinner,
+button.submitting i.fa-spinner,
+input[type="submit"].submitting i.fa-spinner {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Form submitting state */
+form.submitting {
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+form.submitting * {
+    cursor: wait;
 }
 
 /* --- Form Components --- */
@@ -3206,6 +3369,12 @@ body {
 .delete-item-btn:hover {
     background: #bb2d3b;
     border-color: #bb2d3b;
+}
+
+.active-cart-btn {
+    border-color: var(--bg-surface);
+    ;
+    border-width: 2px;
 }
 
 /* Invoice Summary Styles */
@@ -5892,11 +6061,6 @@ WORD SUGGESTION SYSTEM STYLES
 }
 
 /* Page actions styling for date filter */
-.page-actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-}
 
 .page-actions .date-filter {
     margin-right: 0.5rem;
@@ -6042,22 +6206,6 @@ WORD SUGGESTION SYSTEM STYLES
     background: var(--bg-surface);
     border-radius: 8px;
     box-shadow: var(--shadow-sm);
-}
-
-.error-message {
-    text-align: center;
-    padding: 2rem;
-}
-
-.error-message i {
-    font-size: 3rem;
-    color: var(--danger);
-    margin-bottom: 1rem;
-}
-
-.error-message h3 {
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
 }
 
 .error-message p {
@@ -6616,54 +6764,28 @@ a:hover {
     color: var(--text-primary);
 }
 
-/* ========================================
-   NOTIFICATION SYSTEM
-   ======================================== */
-.notification {
+/* Focus blur overlay for Select2 */
+.focus-blur-overlay {
     position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 1rem 1.5rem;
-    border-radius: 8px;
-    color: white;
-    font-weight: 500;
-    z-index: 10000;
-    transform: translateX(100%);
-    transition: transform 0.3s ease;
-    box-shadow: var(--shadow-md);
-    max-width: 400px;
+    inset: 0;
+    z-index: 1040;
+    /* below elevated select2 (we'll use >1040) */
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.25);
+    pointer-events: auto;
+    /* block interactions behind */
 }
 
-.notification.show {
-    transform: translateX(0);
+/* Elevate the active Select2 above overlay */
+.select2-container.elevate-focus,
+.select2-container--open {
+    z-index: 1055 !important;
+    /* above overlay, below modals (Bootstrap modal is 1055+) */
 }
 
-.notification-info {
-    background: var(--primary);
-}
-
-.notification-success {
-    background: var(--success);
-}
-
-.notification-warning {
-    background: var(--warning);
-    color: var(--text-primary);
-}
-
-.notification-error {
-    background: var(--danger);
-}
-
-.notification-danger {
-    background: var(--danger);
-}
-
-/* Dark theme notifications */
-[data-theme="dark"] .notification {
-    box-shadow: var(--shadow-md);
-}
-
-[data-theme="dark"] .notification-warning {
-    color: var(--text-primary);
+/* Keep dropdown above overlay as well */
+.select2-container .select2-dropdown {
+    z-index: 1056;
+    /* above container */
 }

@@ -40,7 +40,7 @@
     </nav>
 
     <!-- User Form -->
-    <div class="form-container col-md-6">
+    <div class="form-container">
         <div class="form-card">
             <form method="post" class="details-form" novalidate autocomplete="off">
                 {% csrf_token %}
@@ -129,6 +129,45 @@
                         {% endif %}
                     </div>
 
+                    <!-- Address Field -->
+                    <div class="form-group {% if form.address.errors %}has-error{% endif %}">
+                        <label for="{{ form.address.id_for_label }}" class="form-label">{{ form.address.label }}</label>
+                        {{ form.address }}
+                        <small class="form-help">Enter the address of the user</small>
+                        {% if form.address.errors %}
+                            <div class="field-errors">
+                                {% for error in form.address.errors %}
+                                    <div class="error-message">
+                                        <i class="fas fa-exclamation-circle"></i>
+                                        {{ error }}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Commission Field -->
+                    <div class="form-group {% if form.commision.errors %}has-error{% endif %}">
+                        <label for="{{ form.commision.id_for_label }}" class="form-label">{{ form.commision.label }}</label>
+                        <div class="checkbox-group">
+                            {{ form.commision }}
+                            <label for="{{ form.commision.id_for_label }}" class="checkbox-label">
+                                Commission Eligible
+                            </label>
+                        </div>
+                        <small class="form-help">Check if this user is eligible for commission</small>
+                        {% if form.commision.errors %}
+                            <div class="field-errors">
+                                {% for error in form.commision.errors %}
+                                    <div class="error-message">
+                                        <i class="fas fa-exclamation-circle"></i>
+                                        {{ error }}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+
                     <!-- Is Active Field -->
                     <div class="form-group {% if form.is_active.errors %}has-error{% endif %}">
                         <label for="{{ form.is_active.id_for_label }}" class="form-label">{{ form.is_active.label }}</label>
@@ -173,6 +212,8 @@
             <li>Fields marked with * are required</li>
             <li>Phone number must be unique across all users</li>
             <li>Email address is optional but must be valid if provided</li>
+            <li>Address field is optional for user location details</li>
+            <li>Commission field determines if user is eligible for commission</li>
             <li>New users will have a default password: <code>changeme123</code></li>
             <li>Users can change their password after first login</li>
         </ul>

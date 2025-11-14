@@ -2,12 +2,27 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import JsonResponse
-from django.db.models import Q, Sum, Count
+from django.db.models import (
+    Q,
+    Sum,
+    Count,
+    DecimalField,
+    Value,
+    ExpressionWrapper,
+    F,
+    OuterRef,
+    Subquery,
+)
+from django.db.models.functions import Coalesce
 from django.contrib import messages
 from django.views.generic.edit import CreateView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 from django.utils import timezone
-from datetime import  timedelta
+from datetime import timedelta
+from django.core.paginator import Paginator
+from django.template.loader import render_to_string
+from decimal import Decimal
+from base.getDates import getDates
 from .models import (
     Supplier,
     SupplierInvoice,
@@ -24,9 +39,413 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def get_total_outstanding_balance():
+    total_all_invoiced = SupplierInvoice.objects.filter(is_deleted=False).aggregate(
+        total=Coalesce(
+            Sum("total_amount"),
+            Value(Decimal("0.00")),
+            output_field=DecimalField(max_digits=16, decimal_places=2),
+        )
+    )["total"]
+
+    total_all_paid = SupplierPayment.objects.filter(is_deleted=False).aggregate(
+        total=Coalesce(
+            Sum("amount"),
+            Value(Decimal("0.00")),
+            output_field=DecimalField(max_digits=16, decimal_places=2),
+        )
+    )["total"]
+
+    return (total_all_invoiced - total_all_paid).quantize(Decimal("0.01"))
+
+
 @login_required
 def dashboard(request):
     """Supplier management dashboard with analytics and insights."""
+    date_filter = request.GET.get("date_filter", "this_month")
+
+    # Calculate full balance due (all invoices - all payments, regardless of status)
+    # This matches the logic in Supplier.balance_due property
+    total_outstanding = get_total_outstanding_balance()
+
+    # Calculate total suppliers (static, doesn't change with date filter)
+    total_suppliers = Supplier.objects.filter(is_deleted=False).count()
+
+    context = {
+        "date_filter": date_filter,
+        "total_outstanding": total_outstanding,
+        "total_suppliers": total_suppliers,
+    }
+    return render(request, "supplier/dashboard.html", context)
+
+
+def get_comparison_data(date_filter, current_start, current_end):
+    """Generate comparison data for line chart based on date filter"""
+    # Calculate previous period dates
+    period_duration = current_end - current_start
+
+    if date_filter in ["today", "yesterday"]:
+        previous_start = current_start - timedelta(days=1)
+        previous_end = current_end - timedelta(days=1)
+        period_type = "daily"
+    elif date_filter in ["this_month", "last_month"]:
+        if current_start.month == 1:
+            previous_start = current_start.replace(
+                year=current_start.year - 1, month=12
+            )
+        else:
+            previous_start = current_start.replace(month=current_start.month - 1)
+        if previous_start.month == 12:
+            next_month = previous_start.replace(year=previous_start.year + 1, month=1)
+        else:
+            next_month = previous_start.replace(month=previous_start.month + 1)
+        previous_end = next_month - timedelta(days=1)
+        period_type = "monthly"
+    elif date_filter in ["this_quarter", "last_quarter"]:
+        quarter = (current_start.month - 1) // 3
+        quarter_start_month = quarter * 3 + 1
+        previous_quarter_start = current_start.replace(
+            month=quarter_start_month - 3 if quarter_start_month > 3 else 9, day=1
+        )
+        if previous_quarter_start.month == 10:
+            previous_quarter_start = previous_quarter_start.replace(
+                year=previous_quarter_start.year - 1
+            )
+        previous_start = previous_quarter_start
+        period_type = "quarterly"
+    elif date_filter in ["this_finance", "last_finance"]:
+        if current_start.month >= 4:
+            previous_start = current_start.replace(
+                year=current_start.year - 1, month=4, day=1
+            )
+            previous_end = current_start.replace(
+                year=current_start.year, month=3, day=31
+            )
+        else:
+            previous_start = current_start.replace(
+                year=current_start.year - 2, month=4, day=1
+            )
+            previous_end = current_start.replace(
+                year=current_start.year - 1, month=3, day=31
+            )
+        period_type = "yearly"
+    else:
+        if current_start.month == 1:
+            previous_start = current_start.replace(
+                year=current_start.year - 1, month=12
+            )
+        else:
+            previous_start = current_start.replace(month=current_start.month - 1)
+        if previous_start.month == 12:
+            next_month = previous_start.replace(year=previous_start.year + 1, month=1)
+        else:
+            next_month = previous_start.replace(month=previous_start.month + 1)
+        previous_end = next_month - timedelta(days=1)
+        period_type = "monthly"
+
+    current_invoices = SupplierInvoice.objects.filter(
+        is_deleted=False, invoice_date__date__range=[current_start, current_end]
+    )
+    current_data = get_period_data(
+        current_invoices, current_start, current_end, period_type
+    )
+
+    previous_invoices = SupplierInvoice.objects.filter(
+        is_deleted=False, invoice_date__date__range=[previous_start, previous_end]
+    )
+    previous_data = get_period_data(
+        previous_invoices, previous_start, previous_end, period_type
+    )
+
+    return {
+        "current_period": {
+            "label": f"{current_start.strftime('%b %d, %Y')} - {current_end.strftime('%b %d, %Y')}",
+            "data": current_data,
+        },
+        "previous_period": {
+            "label": f"{previous_start.strftime('%b %d, %Y')} - {previous_end.strftime('%b %d, %Y')}",
+            "data": previous_data,
+        },
+        "period_type": period_type,
+    }
+
+
+def get_period_data(invoices, start_date, end_date, period_type):
+    """Get aggregated data for a specific period"""
+    if period_type == "daily":
+        total_amount = invoices.aggregate(total=Sum("total_amount"))[
+            "total"
+        ] or Decimal("0")
+        total_invoices = invoices.count()
+        return [
+            {
+                "date": start_date.strftime("%Y-%m-%d"),
+                "amount": float(total_amount),
+                "invoices": total_invoices,
+            }
+        ]
+    elif period_type == "monthly":
+        daily_data = []
+        current_date = start_date
+        while current_date <= end_date:
+            day_invoices = invoices.filter(invoice_date__date=current_date)
+            day_amount = day_invoices.aggregate(total=Sum("total_amount"))[
+                "total"
+            ] or Decimal("0")
+            day_count = day_invoices.count()
+            daily_data.append(
+                {
+                    "date": current_date.strftime("%Y-%m-%d"),
+                    "amount": float(day_amount),
+                    "invoices": day_count,
+                }
+            )
+            current_date += timedelta(days=1)
+        return daily_data
+    elif period_type == "quarterly":
+        weekly_data = []
+        current_date = start_date
+        week_num = 1
+        while current_date <= end_date:
+            week_end = min(current_date + timedelta(days=6), end_date)
+            week_invoices = invoices.filter(
+                invoice_date__date__range=[current_date, week_end]
+            )
+            week_amount = week_invoices.aggregate(total=Sum("total_amount"))[
+                "total"
+            ] or Decimal("0")
+            week_count = week_invoices.count()
+            weekly_data.append(
+                {
+                    "date": current_date.strftime("%Y-%m-%d"),
+                    "amount": float(week_amount),
+                    "invoices": week_count,
+                }
+            )
+            current_date += timedelta(days=7)
+            week_num += 1
+        return weekly_data
+    else:  # yearly
+        monthly_data = []
+        current_date = start_date
+        while current_date <= end_date:
+            month_end = (current_date.replace(day=28) + timedelta(days=4)).replace(
+                day=1
+            ) - timedelta(days=1)
+            month_end = min(month_end, end_date)
+            month_invoices = invoices.filter(
+                invoice_date__date__range=[current_date, month_end]
+            )
+            month_amount = month_invoices.aggregate(total=Sum("total_amount"))[
+                "total"
+            ] or Decimal("0")
+            month_count = month_invoices.count()
+            monthly_data.append(
+                {
+                    "date": current_date.strftime("%Y-%m-%d"),
+                    "amount": float(month_amount),
+                    "invoices": month_count,
+                }
+            )
+            if month_end.month == 12:
+                current_date = month_end.replace(
+                    year=month_end.year + 1, month=1, day=1
+                )
+            else:
+                current_date = month_end.replace(month=month_end.month + 1, day=1)
+        return monthly_data
+
+
+@login_required
+def dashboard_fetch(request):
+    """AJAX endpoint to fetch supplier dashboard data"""
+    date_filter = request.GET.get("date_filter", "this_month")
+    start_date, end_date = getDates(request)
+
+    # Filter invoices by date range (for period-based stats)
+    invoices = SupplierInvoice.objects.filter(
+        is_deleted=False, invoice_date__date__range=[start_date, end_date]
+    ).select_related("supplier")
+
+    payments = SupplierPayment.objects.filter(
+        is_deleted=False, payment_date__date__range=[start_date, end_date]
+    ).select_related("supplier")
+
+    # Calculate PERIOD-BASED totals (for "Total Invoiced" and "Total Paid" display)
+    # These show amounts within the selected date range
+    total_invoiced = invoices.aggregate(
+        total=Coalesce(
+            Sum("total_amount"),
+            Value(Decimal("0.00")),
+            output_field=DecimalField(max_digits=16, decimal_places=2),
+        )
+    )["total"] or Decimal("0.00")
+
+    total_paid = payments.aggregate(
+        total=Coalesce(
+            Sum("amount"),
+            Value(Decimal("0.00")),
+            output_field=DecimalField(max_digits=16, decimal_places=2),
+        )
+    )["total"] or Decimal("0.00")
+
+    # Calculate ALL-TIME totals (for "Total Outstanding" calculation)
+    total_all_invoiced = SupplierInvoice.objects.filter(is_deleted=False).aggregate(
+        total=Coalesce(
+            Sum("total_amount"),
+            Value(Decimal("0.00")),
+            output_field=DecimalField(max_digits=16, decimal_places=2),
+        )
+    )["total"] or Decimal("0.00")
+
+    total_all_paid = SupplierPayment.objects.filter(is_deleted=False).aggregate(
+        total=Coalesce(
+            Sum("amount"),
+            Value(Decimal("0.00")),
+            output_field=DecimalField(max_digits=16, decimal_places=2),
+        )
+    )["total"] or Decimal("0.00")
+
+    # Calculate metrics
+    total_invoices = invoices.count()  # Period-based invoice count
+    outstanding_balance = total_invoiced - total_paid  # Period-based outstanding
+
+    # Calculate comparison data for line chart
+    comparison_data = get_comparison_data(date_filter, start_date, end_date)
+
+    # Invoice status breakdown (period-based)
+    invoice_status_breakdown = (
+        invoices.values("status")
+        .annotate(
+            count=Count("id"),
+            amount=Coalesce(
+                Sum("total_amount"),
+                Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=16, decimal_places=2),
+            ),
+        )
+        .order_by("status")
+    )
+
+    # Payment method breakdown (period-based)
+    payment_method_breakdown = (
+        payments.values("method")
+        .annotate(
+            count=Count("id"),
+            amount=Coalesce(
+                Sum("amount"),
+                Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=16, decimal_places=2),
+            ),
+        )
+        .order_by("method")
+    )
+
+    # Invoice type breakdown (period-based)
+    invoice_type_breakdown = (
+        invoices.values("invoice_type")
+        .annotate(
+            count=Count("id"),
+            amount=Coalesce(
+                Sum("total_amount"),
+                Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=16, decimal_places=2),
+            ),
+        )
+        .order_by("invoice_type")
+    )
+
+    # Supplier breakdown (period-based) - invoices purchased by supplier
+    supplier_breakdown = (
+        invoices.values("supplier__name")
+        .annotate(
+            count=Count("id"),
+            amount=Coalesce(
+                Sum("total_amount"),
+                Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=16, decimal_places=2),
+            ),
+        )
+        .order_by("-amount")[:10]  # Top 10 suppliers by amount
+    )
+
+    # Prepare response data
+    stats = {
+        "total_invoices": total_invoices,  # Period-based count
+        "total_invoiced": float(total_invoiced),  # Period-based total
+        "total_paid": float(total_paid),  # Period-based total
+        "outstanding_balance": float(outstanding_balance),  # Period-based outstanding
+        "net_amount": float(total_paid),
+        "total_profit": float(outstanding_balance),
+        "total_discount": float(Decimal("0")),
+    }
+
+    # Invoice status data processing
+    invoice_status_data = []
+    for status in invoice_status_breakdown:
+        percentage = (
+            (status["count"] / total_invoices * 100) if total_invoices > 0 else 0
+        )
+        invoice_status_data.append(
+            {
+                "payment_status": status["status"].replace("_", " ").title(),
+                "count": status["count"],
+                "amount": float(status["amount"] or 0),
+                "percentage": round(percentage, 1),
+            }
+        )
+
+    # Supplier breakdown data processing
+    supplier_data = []
+    for supplier in supplier_breakdown:
+        percentage = (
+            (supplier["count"] / total_invoices * 100) if total_invoices > 0 else 0
+        )
+        supplier_data.append(
+            {
+                "supplier_name": supplier["supplier__name"] or "Unknown",
+                "count": supplier["count"],
+                "amount": float(supplier["amount"] or 0),
+                "percentage": round(percentage, 1),
+            }
+        )
+
+    # Invoice type data processing
+    invoice_type_data = []
+    for inv_type in invoice_type_breakdown:
+        percentage = (
+            (inv_type["count"] / total_invoices * 100) if total_invoices > 0 else 0
+        )
+        invoice_type_data.append(
+            {
+                "category_name": inv_type["invoice_type"].replace("_", " ").title(),
+                "count": inv_type["count"],
+                "amount": float(inv_type["amount"] or 0),
+                "percentage": round(percentage, 1),
+            }
+        )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "stats": stats,
+            "payment_status_breakdown": invoice_status_data,
+            "supplier_breakdown": supplier_data,
+            "category_breakdown": invoice_type_data,
+            "comparison_data": comparison_data,
+            "date_range": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "filter": date_filter,
+            },
+        }
+    )
+
+
+@login_required
+def dashboard_old(request):
+    """Supplier management dashboard with analytics and insights - OLD VERSION"""
 
     # Get date range filter (default to current month)
     date_filter = request.GET.get("date_filter", "current_month")
@@ -279,54 +698,230 @@ def dashboard(request):
 def home(request):
     """Supplier management main page with search and filter functionality."""
 
-    # Get search and filter parameters
-    search_query = request.GET.get("search", "")
-    status_filter = request.GET.get("status", "")
-    sort_by = request.GET.get("sort", "-created_at")
+    # Initial render only; data loads via AJAX from fetch_suppliers
+    return render(request, "supplier/home.html")
 
-    # Start with all suppliers
-    suppliers = Supplier.objects.all()
 
-    # Apply search filter
+# Constants for AJAX fetch
+SUPPLIERS_PER_PAGE = 25
+VALID_SORT_FIELDS = {
+    "id",
+    "-id",
+    "name",
+    "-name",
+    "created_at",
+    "-created_at",
+    "phone",
+    "-phone",
+    "contact_person",
+    "-contact_person",
+    "gstin",
+    "-gstin",
+    "balance_due",
+    "-balance_due",
+}
+
+
+def get_suppliers_data(request):
+    search_query = request.GET.get("search", "").strip()
+    status_filter = request.GET.get("status", "").strip()
+    sort_by = request.GET.get("sort", "-id").strip()
+
+    filters = Q()
     if search_query:
-        suppliers = suppliers.filter(
+        filters &= (
             Q(name__icontains=search_query)
             | Q(contact_person__icontains=search_query)
             | Q(phone__icontains=search_query)
             | Q(email__icontains=search_query)
             | Q(gstin__icontains=search_query)
-            | Q(address__icontains=search_query)
+            | Q(first_line__icontains=search_query)
+            | Q(second_line__icontains=search_query)
+            | Q(city__icontains=search_query)
+            | Q(state__icontains=search_query)
+            | Q(pincode__icontains=search_query)
+            | Q(country__icontains=search_query)
         )
 
-    # Apply status filter (active/inactive based on soft delete)
     if status_filter == "active":
-        suppliers = suppliers.filter(is_deleted=False)
+        filters &= Q(is_deleted=False)
     elif status_filter == "inactive":
-        suppliers = suppliers.filter(is_deleted=True)
+        filters &= Q(is_deleted=True)
 
-    # Apply sorting
-    if sort_by in [
-        "name",
-        "-name",
-        "created_at",
-        "-created_at",
-        "phone",
-        "-phone",
-        "contact_person",
-        "-contact_person",
-    ]:
-        suppliers = suppliers.order_by(sort_by)
-    else:
-        suppliers = suppliers.order_by("-created_at")
+    if sort_by not in VALID_SORT_FIELDS:
+        sort_by = "-id"
+
+    suppliers = Supplier.objects.filter(filters)
+
+    if sort_by in {"balance_due", "-balance_due"}:
+        sort_prefix = "-" if sort_by.startswith("-") else ""
+        invoice_totals = (
+            SupplierInvoice.objects.filter(supplier=OuterRef("pk"), is_deleted=False)
+            .order_by()
+            .values("supplier")
+            .annotate(total=Sum("total_amount"))
+            .values("total")
+        )
+        payment_totals = (
+            SupplierPayment.objects.filter(supplier=OuterRef("pk"), is_deleted=False)
+            .order_by()
+            .values("supplier")
+            .annotate(total=Sum("amount"))
+            .values("total")
+        )
+
+        suppliers = suppliers.annotate(
+            total_invoiced=Coalesce(
+                Subquery(
+                    invoice_totals[:1],
+                    output_field=DecimalField(max_digits=16, decimal_places=2),
+                ),
+                Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=16, decimal_places=2),
+            ),
+            total_paid=Coalesce(
+                Subquery(
+                    payment_totals[:1],
+                    output_field=DecimalField(max_digits=16, decimal_places=2),
+                ),
+                Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=16, decimal_places=2),
+            ),
+        ).annotate(
+            calculated_balance_due=ExpressionWrapper(
+                F("total_invoiced") - F("total_paid"),
+                output_field=DecimalField(max_digits=16, decimal_places=2),
+            )
+        )
+        sort_by = f"{sort_prefix}calculated_balance_due"
+
+    suppliers = suppliers.order_by(sort_by)
+    return suppliers
+
+
+@login_required
+def fetch_suppliers(request):
+    """AJAX endpoint to fetch suppliers with search, filter, sorting, and pagination."""
+
+    suppliers = get_suppliers_data(request)
+    # Debug prints removed
+
+    paginator = Paginator(suppliers, SUPPLIERS_PER_PAGE)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
 
     context = {
-        "data": suppliers,
-        "search_query": search_query,
-        "status_filter": status_filter,
-        "sort_by": sort_by,
+        "page_obj": page_obj,
+        "total_count": paginator.count,
     }
 
-    return render(request, "supplier/home.html", context)
+    table_html = render_to_string("supplier/fetch.html", context, request=request)
+
+    pagination_html = ""
+    if page_obj and page_obj.paginator.num_pages > 1:
+        pagination_html = render_to_string(
+            "common/_pagination.html", context, request=request
+        )
+
+    return JsonResponse(
+        {"html": table_html, "pagination": pagination_html, "success": True}
+    )
+
+
+@login_required
+def fetch_supplier_invoices(request, pk):
+    """AJAX: fetch invoices for a supplier with pagination and optional sorting."""
+    supplier = get_object_or_404(Supplier, id=pk)
+
+    sort_by = (request.GET.get("sort") or "-invoice_date").strip()
+    valid_sort_fields = {
+        "invoice_date",
+        "-invoice_date",
+        "total_amount",
+        "-total_amount",
+        "sub_total",
+        "-sub_total",
+        "status",
+        "-status",
+        "invoice_number",
+        "-invoice_number",
+    }
+    if sort_by not in valid_sort_fields:
+        sort_by = "-invoice_date"
+
+    queryset = supplier.invoices.filter(is_deleted=False).order_by(sort_by)
+
+    paginator = Paginator(queryset, 10)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        "supplier": supplier,
+        "page_obj": page_obj,
+        "total_count": paginator.count,
+    }
+
+    table_html = render_to_string(
+        "supplier/invoice/fetch.html", context, request=request
+    )
+
+    pagination_html = ""
+    if page_obj and page_obj.paginator.num_pages > 1:
+        pagination_html = render_to_string(
+            "common/_pagination.html", context, request=request
+        )
+
+    return JsonResponse(
+        {"html": table_html, "pagination": pagination_html, "success": True}
+    )
+
+
+@login_required
+def fetch_supplier_payments(request, pk):
+    """AJAX: fetch payments for a supplier with pagination and optional sorting."""
+    supplier = get_object_or_404(Supplier, id=pk)
+
+    sort_by = (request.GET.get("sort") or "-payment_date").strip()
+    valid_sort_fields = {
+        "payment_date",
+        "-payment_date",
+        "amount",
+        "-amount",
+        "unallocated_amount",
+        "-unallocated_amount",
+        "id",
+        "-id",
+        "method",
+        "-method",
+    }
+    if sort_by not in valid_sort_fields:
+        sort_by = "-payment_date"
+
+    queryset = supplier.payments_made.filter(is_deleted=False).order_by(sort_by)
+
+    paginator = Paginator(queryset, 10)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        "supplier": supplier,
+        "page_obj": page_obj,
+        "total_count": paginator.count,
+    }
+
+    table_html = render_to_string(
+        "supplier/payment/fetch.html", context, request=request
+    )
+
+    pagination_html = ""
+    if page_obj and page_obj.paginator.num_pages > 1:
+        pagination_html = render_to_string(
+            "common/_pagination.html", context, request=request
+        )
+
+    return JsonResponse(
+        {"html": table_html, "pagination": pagination_html, "success": True}
+    )
 
 
 @login_required

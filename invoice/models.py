@@ -80,6 +80,7 @@ def get_next_sequence(invoice_type, financial_year):
 
 class Invoice(InvoiceFinancialMixin, InvoiceValidationMixin, models.Model):
     """Main Invoice model with organized structure"""
+
     GstType = GstTypeChoices
 
     # Use imported choices
@@ -168,7 +169,9 @@ class Invoice(InvoiceFinancialMixin, InvoiceValidationMixin, models.Model):
         blank=True,
         related_name="modified_invoices",
     )
-    gst_type = models.CharField(max_length=20, choices=GstTypeChoices.choices, default=GstTypeChoices.CGST_SGST)
+    gst_type = models.CharField(
+        max_length=20, choices=GstTypeChoices.choices, default=GstTypeChoices.CGST_SGST
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -209,7 +212,7 @@ class Invoice(InvoiceFinancialMixin, InvoiceValidationMixin, models.Model):
 
         super().save(*args, **kwargs)
 
-    
+
 class InvoiceItem(InvoiceItemFinancialMixin, InvoiceItemValidationMixin, models.Model):
     """Invoice line items with organized structure"""
 
@@ -251,9 +254,27 @@ class InvoiceItem(InvoiceItemFinancialMixin, InvoiceItemValidationMixin, models.
         validators=[MinValueValidator(Decimal("0"))],
         help_text="Cost price per unit (for profit calculation)",
     )
-    hsn_code = models.ForeignKey(GSTHsnCode, on_delete=models.PROTECT, related_name="invoice_items", null=True, blank=True)
-    cess_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(Decimal("0"))], help_text="Cess rate")
-    gst_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("5.00"), validators=[MinValueValidator(Decimal("0"))], help_text="GST percentage")
+    hsn_code = models.ForeignKey(
+        GSTHsnCode,
+        on_delete=models.PROTECT,
+        related_name="invoice_items",
+        null=True,
+        blank=True,
+    )
+    cess_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="Cess rate",
+    )
+    gst_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("5.00"),
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="GST percentage",
+    )
 
     # Metadata
     notes = models.TextField(blank=True, null=True)
@@ -264,7 +285,7 @@ class InvoiceItem(InvoiceItemFinancialMixin, InvoiceItemValidationMixin, models.
         ordering = ["id"]
         indexes = InvoiceItemConstraints.get_all_indexes()
         # Prevent duplicate items on same invoice
-        unique_together = ["invoice", "product_variant"]
+        # unique_together = ["invoice", "product_variant"]
 
     def __str__(self):
         try:

@@ -34,7 +34,7 @@
         <span class="breadcrumb-active">{{ variant.full_name }}</span>
     </nav>
     <!-- Main Layout -->
-    <div class="col d-flex flex-row gap-2">
+    <div class="col d-flex flex-row">
         <!-- Left Column - Variant Details -->
         <div class="col-md-2 d-flex flex-column gap-2">
             <!-- Variant Details Column -->
@@ -130,7 +130,7 @@
                     <h4>Value Summary</h4>
                     <div class="summary-stats-compact">
                         <div class="stat-item-compact">
-                            <span class="stat-number-compact">{{ variant.purchase_price|currency_abbreviation }}</span>
+                            <span class="stat-number-compact" id="purchasePriceSummary" data-price="{{ variant.purchase_price|currency_abbreviation }}">XXXX</span>
                             <span class="stat-label-compact">Purchase</span>
                         </div>
                         <div class="stat-item-compact">
@@ -196,9 +196,9 @@
             </div>
         </div>
         <!-- Right Column - Tables -->
-        <div class="col-md-10 d-flex flex-column gap-2">
+        <div class="col-md-10 d-flex flex-column gap-2 ps-1">
             <!-- Stock and Price Information Side by Side -->
-            <div class="info-tables-container">
+            <div class="info-tables-container gap-2">
                 <!-- Stock Information Table -->
                 <div class="table-section" id="stockSection">
                     <div class="table-header">
@@ -281,7 +281,9 @@
                                     <td>
                                         <strong>Purchase Price</strong>
                                     </td>
-                                    <td>{{ variant.purchase_price|currency }}</td>
+                                    <td>
+                                        <span id="purchasePriceDisplay" data-price="{{ variant.purchase_price|currency }}">XXXX</span>
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td>
@@ -422,8 +424,6 @@
         .info-tables-container {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
-            margin-bottom: 2rem;
         }
 
         /* Responsive design for mobile */
@@ -817,4 +817,58 @@
             }
         }
     </style>
+    <script src="{% static 'js/counting.js' %}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            let purchasePriceVisible = false;
+            const purchasePriceDisplay = document.getElementById('purchasePriceDisplay');
+            const purchasePriceSummary = document.getElementById('purchasePriceSummary');
+            
+            // Extract numeric value from currency string
+            function extractNumericValue(currencyString) {
+                // Remove currency symbols, commas, and spaces, keep only numbers and decimal point
+                const numericString = currencyString.replace(/[^\d.-]/g, '');
+                return parseFloat(numericString) || 0;
+            }
+            
+            // Toggle purchase price visibility
+            function togglePurchasePrice() {
+                purchasePriceVisible = !purchasePriceVisible;
+                
+                if (purchasePriceVisible) {
+                    // Show with animation
+                    if (purchasePriceDisplay) {
+                        const priceValue = extractNumericValue(purchasePriceDisplay.getAttribute('data-price'));
+                        purchasePriceDisplay.textContent = '0';
+                        purchasePriceDisplay.setAttribute('data-count', priceValue);
+                        animateCounter(purchasePriceDisplay, 0, priceValue, 1000);
+                    }
+                    
+                    if (purchasePriceSummary) {
+                        const summaryValue = extractNumericValue(purchasePriceSummary.getAttribute('data-price'));
+                        purchasePriceSummary.textContent = '0';
+                        purchasePriceSummary.setAttribute('data-count', summaryValue);
+                        animateCounter(purchasePriceSummary, 0, summaryValue, 1000);
+                    }
+                } else {
+                    // Hide - show XXXX
+                    if (purchasePriceDisplay) {
+                        purchasePriceDisplay.textContent = 'XXXX';
+                    }
+                    
+                    if (purchasePriceSummary) {
+                        purchasePriceSummary.textContent = 'XXXX';
+                    }
+                }
+            }
+            
+            // Listen for F9 key press
+            document.addEventListener('keydown', function(event) {
+                if (event.key === 'F9') {
+                    event.preventDefault();
+                    togglePurchasePrice();
+                }
+            });
+        });
+    </script>
 {% endblock extra_js %}

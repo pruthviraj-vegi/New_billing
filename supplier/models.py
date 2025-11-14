@@ -11,7 +11,8 @@ from django.utils import timezone
 from base.utility import StringProcessor
 from django.utils.text import slugify
 from datetime import datetime
-from django.db.models import Sum
+from django.db.models import Sum, DecimalField, Value
+from django.db.models.functions import Coalesce
 from decimal import Decimal
 
 User = settings.AUTH_USER_MODEL
@@ -29,10 +30,18 @@ class Supplier(SoftDeleteModel):
     contact_person = models.CharField(max_length=100, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=20, unique=True, validators=[phone_regex])
-    gstin = models.CharField(
-        max_length=15, blank=True, help_text="Supplier's GST Identification Number."
+    phone_two = models.CharField(
+        max_length=20, unique=True, validators=[phone_regex], blank=True, null=True
     )
-    address = models.TextField(blank=True, null=True)
+    gstin = models.CharField(
+        max_length=25, blank=True, help_text="Supplier's GST Identification Number."
+    )
+    first_line = models.CharField(max_length=255, blank=True, null=True)
+    second_line = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    pincode = models.CharField(max_length=10, blank=True, null=True)
+    country = models.CharField(max_length=100, blank=True, null=True)
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, related_name="supplier_created_by"
     )
@@ -48,19 +57,32 @@ class Supplier(SoftDeleteModel):
         self.email = StringProcessor(self.email).toLowercase()
         self.phone = StringProcessor(self.phone).cleaned_string
         self.gstin = StringProcessor(self.gstin).toUppercase()
-        self.address = StringProcessor(self.address).toTitle()
+        self.first_line = StringProcessor(self.first_line).toTitle()
+        self.second_line = StringProcessor(self.second_line).toTitle()
+        self.city = StringProcessor(self.city).toTitle()
+        self.state = StringProcessor(self.state).toTitle()
+        self.pincode = StringProcessor(self.pincode).toUppercase()
+        self.country = StringProcessor(self.country).toTitle()
 
         super().save(*args, **kwargs)
 
     @property
     def balance_due(self):
-        total_invoiced = (
-            self.invoices.aggregate(total=Sum("total_amount"))["total"] or 0
-        )
-        total_paid_on_invoices = (
-            self.payments_made.aggregate(total=Sum("amount"))["total"] or 0
-        )
-        return total_invoiced - total_paid_on_invoices
+        total_invoiced = self.invoices.filter(is_deleted=False).aggregate(
+            total=Coalesce(
+                Sum("total_amount"),
+                Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=16, decimal_places=2),
+            )
+        )["total"]
+        total_paid_on_invoices = self.payments_made.filter(is_deleted=False).aggregate(
+            total=Coalesce(
+                Sum("amount"),
+                Value(Decimal("0.00")),
+                output_field=DecimalField(max_digits=16, decimal_places=2),
+            )
+        )["total"]
+        return (total_invoiced - total_paid_on_invoices).quantize(Decimal("0.01"))
 
 
 class SupplierInvoice(SoftDeleteModel):
@@ -146,11 +168,11 @@ class SupplierInvoice(SoftDeleteModel):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ("supplier", "invoice_number")
+        unique_together = ("supplier", "invoice_number", "invoice_date")
         ordering = ["-invoice_date"]
 
     def __str__(self):
-        return f"Invoice {self.invoice_number} from {self.supplier.name}"
+        return f"Invoice {self.invoice_number} - {self.supplier.name} ({self.invoice_date.date()})"
 
     def save(self, *args, **kwargs):
         self.invoice_number = StringProcessor(self.invoice_number).toUppercase()

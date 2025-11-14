@@ -19,7 +19,12 @@ class SupplierForm(forms.ModelForm):
             "email",
             "phone",
             "gstin",
-            "address",
+            "first_line",
+            "second_line",
+            "city",
+            "state",
+            "pincode",
+            "country",
         ]
         widgets = {
             "name": forms.TextInput(
@@ -48,11 +53,34 @@ class SupplierForm(forms.ModelForm):
                     "placeholder": "Enter GSTIN",
                 }
             ),
-            "address": forms.Textarea(
+            "first_line": forms.TextInput(
                 attrs={
-                    "class": "form-textarea",
-                    "rows": 3,
-                    "placeholder": "Enter Address",
+                    "placeholder": "Enter First Line",
+                }
+            ),
+            "second_line": forms.TextInput(
+                attrs={
+                    "placeholder": "Enter Second Line",
+                }
+            ),
+            "city": forms.TextInput(
+                attrs={
+                    "placeholder": "Enter City",
+                }
+            ),
+            "state": forms.TextInput(
+                attrs={
+                    "placeholder": "Enter State",
+                }
+            ),
+            "pincode": forms.TextInput(
+                attrs={
+                    "placeholder": "Enter Pincode",
+                }
+            ),
+            "country": forms.TextInput(
+                attrs={
+                    "placeholder": "Enter Country",
                 }
             ),
         }

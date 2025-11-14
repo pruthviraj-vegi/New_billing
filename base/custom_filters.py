@@ -8,7 +8,6 @@ from num2words import num2words
 
 logger = logging.getLogger(__name__)
 
-
 locale.setlocale(locale.LC_ALL, "en_IN")
 
 register = template.Library()

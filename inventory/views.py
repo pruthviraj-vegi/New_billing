@@ -8,14 +8,13 @@ from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.views.generic import View, DeleteView
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
-import json
 
 from django.urls import reverse_lazy
 from .services import InventoryService
 
 from django.db import transaction
+from django.core.cache import cache
+import json
 
 from .forms import (
     ProductForm,
@@ -30,6 +29,7 @@ from .forms import (
 from .models import Product, ProductVariant, InventoryLog, Size
 
 from supplier.models import SupplierInvoice, Supplier
+from base.getDates import getDates
 
 import logging
 
@@ -42,92 +42,251 @@ def inventory_dashboard(request):
         is_deleted=False, status=ProductVariant.VariantStatus.ACTIVE
     )
 
-    # Calculate total stock in (all stock in transactions for active variants)
-    total_stock_in = (
-        InventoryLog.objects.filter(
-            transaction_type="STOCK_IN", variant__is_deleted=False
-        ).aggregate(total=Sum("quantity_change"))["total"]
-        or 0
-    )
-
-    # Calculate total stock out (all stock out transactions for active variants)
-    total_stock_out = (
-        InventoryLog.objects.filter(
-            transaction_type="SALE", variant__is_deleted=False
-        ).aggregate(total=Sum("quantity_change"))["total"]
-        or 0
-    )
-
-    # Calculate trending stock (items with recent stock out activity for active variants)
-    trending_stock = (
-        InventoryLog.objects.filter(
-            transaction_type="SALE",
-            variant__is_deleted=False,
-            timestamp__gte=timezone.now() - timezone.timedelta(days=30),
-        )
-        .values("variant")
-        .distinct()
-        .count()
-    )
-
-    # Calculate damaged stock (items marked as damaged)
-    damaged_stock = (
-        ProductVariant.objects.filter(damaged_quantity__gt=0).aggregate(
-            total=Sum("damaged_quantity")
-        )["total"]
-        or 0
-    )
-
     # Additional metrics
     total_products = Product.objects.filter(is_deleted=False).count()
     total_variants = active_variants.count()
     low_stock_variants = active_variants.filter(
         quantity__lte=F("minimum_quantity")
     ).count()
-    out_of_stock_variants = active_variants.filter(quantity=0).count()
 
-    # Calculate total inventory value
-    total_inventory_value = sum(variant.total_value for variant in active_variants)
-
-    # Recent activities (last 7 days)
-    recent_activities = InventoryLog.objects.filter(
-        timestamp__gte=timezone.now() - timezone.timedelta(days=7),
-        variant__is_deleted=False,
-    ).order_by("-timestamp")[:10]
-
-    # Top selling products (last 30 days)
-    top_selling = (
-        InventoryLog.objects.filter(
-            transaction_type="SALE",
-            variant__is_deleted=False,
-            timestamp__gte=timezone.now() - timezone.timedelta(days=30),
-        )
-        .values("variant__product__brand", "variant__product__name")
-        .annotate(total_sold=Sum("quantity_change"))
-        .order_by("-total_sold")[:5]
+    # Calculate total inventory value (quantity * purchase_price)
+    total_inventory_value = sum(
+        variant.quantity * variant.purchase_price for variant in active_variants
     )
 
-    # Stock alerts
-    stock_alerts = active_variants.filter(quantity__lte=F("minimum_quantity")).order_by(
-        "quantity"
-    )[:5]
+    # Calculate and cache total_stock_by_supplier (date-independent, loaded once)
+    total_stock_data = _calculate_total_stock_by_supplier()
 
     context = {
-        "total_stock_in": total_stock_in,
-        "total_stock_out": total_stock_out,
-        "trending_stock": trending_stock,
-        "damaged_stock": damaged_stock,
         "total_products": total_products,
         "total_variants": total_variants,
         "low_stock_variants": low_stock_variants,
-        "out_of_stock_variants": out_of_stock_variants,
         "total_inventory_value": total_inventory_value,
-        "recent_activities": recent_activities,
-        "top_selling": top_selling,
-        "stock_alerts": stock_alerts,
+        "date_filter": request.GET.get("date_filter", "this_month"),
+        "total_stock_data_json": json.dumps(
+            total_stock_data
+        ),  # Pass as JSON string for template
     }
 
     return render(request, "inventory/dashboard.html", context)
+
+
+@login_required
+def inventory_dashboard_fetch(request):
+    """AJAX endpoint to fetch dynamic dashboard data based on date filter"""
+    start_date, end_date = getDates(request)
+    date_filter = request.GET.get("date_filter", "this_month")
+
+    # Calculate monetary Stock In (|quantity| * purchase_price)
+    stock_in = (
+        InventoryLog.objects.filter(
+            transaction_type="STOCK_IN",
+            variant__is_deleted=False,
+            timestamp__gte=start_date,
+            timestamp__lte=end_date,
+        ).aggregate(
+            total=Sum(
+                Abs(F("quantity_change")) * F("purchase_price"),
+                output_field=models.DecimalField(max_digits=16, decimal_places=2),
+            )
+        )[
+            "total"
+        ]
+        or 0
+    )
+
+    # Calculate monetary Stock Out valued at purchase price baseline (|quantity| * purchase_price)
+    stock_out = (
+        InventoryLog.objects.filter(
+            transaction_type="SALE",
+            variant__is_deleted=False,
+            timestamp__gte=start_date,
+            timestamp__lte=end_date,
+        ).aggregate(
+            total=Sum(
+                Abs(F("quantity_change")) * F("purchase_price"),
+                output_field=models.DecimalField(max_digits=16, decimal_places=2),
+            )
+        )[
+            "total"
+        ]
+        or 0
+    )
+
+    # Get supplier shares for stock_in and stock_out
+    def aggregate_by_supplier(qs, supplier_path):
+        data = (
+            qs.values(name=F(f"{supplier_path}__name"))
+            .annotate(
+                amount=Sum(
+                    Abs(F("quantity_change")) * F("purchase_price"),
+                    output_field=models.DecimalField(max_digits=16, decimal_places=2),
+                )
+            )
+            .order_by("-amount")
+        )
+        result = []
+        for item in data:
+            result.append({
+                "supplier_name": item["name"] or "Others",
+                "amount": float(item["amount"] or 0),
+                "count": 0  # Not applicable for inventory, but keeping format consistent
+            })
+        return result
+
+    # Base query for date range
+    base_qs = InventoryLog.objects.filter(
+        variant__is_deleted=False, timestamp__gte=start_date, timestamp__lte=end_date
+    )
+
+    # Stock in breakdown by supplier
+    stock_in_breakdown = aggregate_by_supplier(
+        base_qs.filter(transaction_type="STOCK_IN"), "supplier_invoice__supplier"
+    )
+
+    # Stock out breakdown by supplier
+    stock_out_breakdown = aggregate_by_supplier(
+        base_qs.filter(transaction_type="SALE"),
+        "source_inventory_log__supplier_invoice__supplier",
+    )
+
+    # Prepare stats
+    stats = {
+        "stock_in": float(round(stock_in, 2)),
+        "stock_out": float(round(stock_out, 2)),
+    }
+
+    return JsonResponse(
+        {
+            "success": True,
+            "stats": stats,
+            "stock_in_breakdown": stock_in_breakdown,
+            "stock_out_breakdown": stock_out_breakdown,
+            "date_range": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "filter": date_filter,
+            },
+        }
+    )
+
+
+def _calculate_total_stock_by_supplier():
+    """
+    Calculate total stock by supplier (cached, date-independent).
+    Optimized with bulk queries to avoid N+1 problem.
+    """
+    cache_key = "inventory_total_stock_by_supplier"
+    cached_result = cache.get(cache_key)
+
+    if cached_result is not None:
+        return cached_result
+
+    # Get all active variants with their quantities and prices
+    active_variants = ProductVariant.objects.filter(
+        is_deleted=False, status=ProductVariant.VariantStatus.ACTIVE
+    ).values("id", "quantity", "purchase_price")
+
+    variant_ids = [v["id"] for v in active_variants]
+
+    if not variant_ids:
+        result = {"labels": [], "values": []}
+        cache.set(cache_key, result, 300)  # Cache for 5 minutes
+        return result
+
+    # Get all stock-in transactions for variants (ordered by timestamp desc)
+    # Then group in Python to get latest per variant (works across all databases)
+    all_stock_in_logs = (
+        InventoryLog.objects.filter(
+            variant_id__in=variant_ids,
+            transaction_type__in=["STOCK_IN", "INITIAL"],
+            supplier_invoice__isnull=False,
+        )
+        .select_related("supplier_invoice__supplier")
+        .order_by("variant_id", "-timestamp")
+        .values("variant_id", "supplier_invoice__supplier__name")
+    )
+
+    # Create a mapping of variant_id -> supplier_name (keep first/latest per variant)
+    variant_to_supplier = {}
+    for log in all_stock_in_logs:
+        variant_id = log["variant_id"]
+        if (
+            variant_id not in variant_to_supplier
+        ):  # First occurrence is latest due to ordering
+            supplier_name = log.get("supplier_invoice__supplier__name")
+            if supplier_name:
+                variant_to_supplier[variant_id] = supplier_name
+
+    # Aggregate by supplier
+    total_stock_by_supplier = {}
+    for variant in active_variants:
+        variant_id = variant["id"]
+        supplier_name = variant_to_supplier.get(variant_id, "Others")
+        stock_value = float(variant["quantity"] * variant["purchase_price"])
+        total_stock_by_supplier[supplier_name] = (
+            total_stock_by_supplier.get(supplier_name, 0) + stock_value
+        )
+
+    # Convert to sorted lists
+    sorted_total_stock = sorted(
+        total_stock_by_supplier.items(), key=lambda x: x[1], reverse=True
+    )
+    result = {
+        "labels": [item[0] for item in sorted_total_stock],
+        "values": [round(item[1], 2) for item in sorted_total_stock],
+    }
+
+    # Cache for 5 minutes (300 seconds)
+    cache.set(cache_key, result, 300)
+    return result
+
+
+@login_required
+def inventory_supplier_shares_fetch(request):
+    """
+    Return per-supplier shares for STOCK_IN and SALE (date-dependent only).
+    Total stock is loaded once on initial page load and cached.
+    """
+    start_date, end_date = getDates(request)
+
+    def aggregate_by_supplier(qs, supplier_path):
+        data = (
+            qs.values(name=F(f"{supplier_path}__name"))
+            .annotate(
+                amount=Sum(
+                    Abs(F("quantity_change")) * F("purchase_price"),
+                    output_field=models.DecimalField(max_digits=16, decimal_places=2),
+                )
+            )
+            .order_by("-amount")
+        )
+        labels = [item["name"] or "Others" for item in data]
+        values = [round(item["amount"] or 0, 2) for item in data]
+        return labels, values
+
+    # Only calculate date-dependent metrics (stock_in and stock_out)
+    # total_stock is loaded once on initial page render and stays cached
+    base_qs = InventoryLog.objects.filter(
+        variant__is_deleted=False, timestamp__gte=start_date, timestamp__lte=end_date
+    )
+
+    in_labels, in_values = aggregate_by_supplier(
+        base_qs.filter(transaction_type="STOCK_IN"), "supplier_invoice__supplier"
+    )
+
+    # STOCK_OUT share attributed to the source stock's supplier - date-dependent
+    out_labels, out_values = aggregate_by_supplier(
+        base_qs.filter(transaction_type="SALE"),
+        "source_inventory_log__supplier_invoice__supplier",
+    )
+
+    return JsonResponse(
+        {
+            "stock_in": {"labels": in_labels, "values": in_values},
+            "stock_out": {"labels": out_labels, "values": out_values},
+        }
+    )
 
 
 @login_required
@@ -418,6 +577,8 @@ def supplier_invoice_tracking(request):
     # Prepare summaries in Python
     invoice_summaries = []
     for invoice in supplier_invoices:
+        if invoice.stock_in == 0:
+            continue
         stock_in = invoice.stock_in or 0
         sales = invoice.sales or 0
         remaining = stock_in - sales

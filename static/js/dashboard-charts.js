@@ -210,217 +210,67 @@
         else if (byId(state.ids.categoryLegend)) byId(state.ids.categoryLegend).innerHTML = '<p class="text-muted">No category data available</p>';
     }
 
-    function createPaymentStatusChart(data) {
-        const ctx = byId(state.ids.paymentStatusChart).getContext('2d');
-        const chartData = {
-            labels: data.map(i => i.payment_status),
-            datasets: [{
-                data: data.map(i => i.count),
-                backgroundColor: chartColors.paymentStatus.slice(0, data.length),
-                borderColor: 'rgba(255, 255, 255, 0.8)',
-                borderWidth: 3,
-                hoverBorderWidth: 4,
-                hoverBackgroundColor: chartColors.paymentStatusHover.slice(0, data.length),
-                hoverOffset: 8
-            }]
-        };
-        state.charts.paymentStatus = new Chart(ctx, {
-            type: 'doughnut',
-            data: chartData,
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '60%',
-                animation: { animateRotate: true, animateScale: true, duration: 1000, easing: 'easeOutQuart' },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: 'rgba(30, 41, 59, 0.95)',
-                        titleColor: '#ffffff',
-                        bodyColor: '#ffffff',
-                        borderColor: 'rgba(37, 99, 235, 0.3)',
-                        borderWidth: 1,
-                        cornerRadius: 8,
-                        displayColors: true,
-                        padding: 12,
-                        callbacks: {
-                            title: ctx => ctx[0].label,
-                            label: ctx => {
-                                const item = data[ctx.dataIndex];
-                                const total = data.reduce((s, d) => s + d.count, 0);
-                                const pct = ((item.count / total) * 100).toFixed(1);
-                                return ['Count: ' + item.count, 'Amount: ' + formatCurrency(item.amount), 'Percentage: ' + pct + '%'];
-                            }
-                        }
-                    }
-                },
-                elements: { arc: { borderWidth: 0 } }
-            }
-        });
+    /**
+     * Generic pie chart creator - converts data to standardized format
+     * Uses ChartUtils.createPieChart with standardized data structure
+     */
+    function createPieChart(config) {
+        if (!(window.ChartUtils && ChartUtils.createPieChart)) return null;
+        return ChartUtils.createPieChart(config);
+    }
 
-        const totalCount = data.reduce((s, i) => s + i.count, 0);
-        const legendHtml = data.map((item, idx) => {
-            const pct = ((item.count / totalCount) * 100).toFixed(1);
-            return (
-                '<div class="legend-item modern-legend">' +
-                '<div class="legend-indicator">' +
-                '<span class="legend-color" style="background: linear-gradient(135deg, ' + chartColors.paymentStatus[idx] + ', ' + chartColors.paymentStatusHover[idx] + ')"></span>' +
-                '</div>' +
-                '<div class="legend-content">' +
-                '<div class="legend-label">' + item.payment_status + '</div>' +
-                '<div class="legend-stats">' +
-                '<span class="legend-count">' + item.count + '</span>' +
-                '<span class="legend-percentage">' + pct + '%</span>' +
-                '</div>' +
-                '<div class="legend-amount">' + formatCurrency(item.amount) + '</div>' +
-                '</div>' +
-                '</div>'
-            );
-        }).join('');
-        const legendEl = byId(state.ids.paymentStatusLegend);
-        if (legendEl) legendEl.innerHTML = legendHtml;
+    function createPaymentStatusChart(data) {
+        // Convert to standardized format: { label, value, amount }
+        const standardizedData = data.map(item => ({
+            label: item.payment_status,
+            value: item.count,
+            amount: item.amount
+        }));
+
+        state.charts.paymentStatus = createPieChart({
+            chartKey: 'invoice_payment_status',
+            canvasId: state.ids.paymentStatusChart,
+            legendId: state.ids.paymentStatusLegend,
+            data: standardizedData,
+            colors: chartColors.paymentStatus,
+            colorsHover: chartColors.paymentStatusHover
+        });
     }
 
     function createPaymentTypeChart(data) {
-        const ctx = byId(state.ids.paymentTypeChart).getContext('2d');
-        const chartData = {
-            labels: data.map(i => i.payment_type),
-            datasets: [{
-                data: data.map(i => i.count),
-                backgroundColor: chartColors.paymentType.slice(0, data.length),
-                borderColor: 'rgba(255, 255, 255, 0.8)',
-                borderWidth: 3,
-                hoverBorderWidth: 4,
-                hoverBackgroundColor: chartColors.paymentTypeHover.slice(0, data.length),
-                hoverOffset: 8
-            }]
-        };
-        state.charts.paymentType = new Chart(ctx, {
-            type: 'doughnut',
-            data: chartData,
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '60%',
-                animation: { animateRotate: true, animateScale: true, duration: 1000, easing: 'easeOutQuart' },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: 'rgba(30, 41, 59, 0.95)',
-                        titleColor: '#ffffff',
-                        bodyColor: '#ffffff',
-                        borderColor: 'rgba(6, 182, 212, 0.3)',
-                        borderWidth: 1,
-                        cornerRadius: 8,
-                        displayColors: true,
-                        padding: 12,
-                        callbacks: {
-                            title: ctx => ctx[0].label,
-                            label: ctx => {
-                                const item = data[ctx.dataIndex];
-                                const total = data.reduce((s, d) => s + d.count, 0);
-                                const pct = ((item.count / total) * 100).toFixed(1);
-                                return ['Count: ' + item.count, 'Amount: ' + formatCurrency(item.amount), 'Percentage: ' + pct + '%'];
-                            }
-                        }
-                    }
-                },
-                elements: { arc: { borderWidth: 0 } }
-            }
-        });
+        // Convert to standardized format: { label, value, amount }
+        const standardizedData = data.map(item => ({
+            label: item.payment_type,
+            value: item.count,
+            amount: item.amount
+        }));
 
-        const totalCount = data.reduce((s, i) => s + i.count, 0);
-        const legendHtml = data.map((item, idx) => {
-            const pct = ((item.count / totalCount) * 100).toFixed(1);
-            return (
-                '<div class="legend-item modern-legend">' +
-                '<div class="legend-indicator">' +
-                '<span class="legend-color" style="background: linear-gradient(135deg, ' + chartColors.paymentType[idx] + ', ' + chartColors.paymentTypeHover[idx] + ')"></span>' +
-                '</div>' +
-                '<div class="legend-content">' +
-                '<div class="legend-label">' + item.payment_type + '</div>' +
-                '<div class="legend-stats">' +
-                '<span class="legend-count">' + item.count + '</span>' +
-                '<span class="legend-percentage">' + pct + '%</span>' +
-                '</div>' +
-                '<div class="legend-amount">' + formatCurrency(item.amount) + '</div>' +
-                '</div>' +
-                '</div>'
-            );
-        }).join('');
-        const legendEl = byId(state.ids.paymentTypeLegend);
-        if (legendEl) legendEl.innerHTML = legendHtml;
+        state.charts.paymentType = createPieChart({
+            chartKey: 'invoice_payment_type',
+            canvasId: state.ids.paymentTypeChart,
+            legendId: state.ids.paymentTypeLegend,
+            data: standardizedData,
+            colors: chartColors.paymentType,
+            colorsHover: chartColors.paymentTypeHover
+        });
     }
 
     function createCategoryChart(data) {
-        const ctx = byId(state.ids.categoryChart).getContext('2d');
-        const chartData = {
-            labels: data.map(i => i.category_name),
-            datasets: [{
-                data: data.map(i => i.count),
-                backgroundColor: chartColors.category.slice(0, data.length),
-                borderColor: 'rgba(255, 255, 255, 0.8)',
-                borderWidth: 3,
-                hoverBorderWidth: 4,
-                hoverBackgroundColor: chartColors.categoryHover.slice(0, data.length),
-                hoverOffset: 8
-            }]
-        };
-        state.charts.category = new Chart(ctx, {
-            type: 'doughnut',
-            data: chartData,
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '60%',
-                animation: { animateRotate: true, animateScale: true, duration: 1000, easing: 'easeOutQuart' },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: 'rgba(30, 41, 59, 0.95)',
-                        titleColor: '#ffffff',
-                        bodyColor: '#ffffff',
-                        borderColor: 'rgba(34, 197, 94, 0.3)',
-                        borderWidth: 1,
-                        cornerRadius: 8,
-                        displayColors: true,
-                        padding: 12,
-                        callbacks: {
-                            title: ctx => ctx[0].label,
-                            label: ctx => {
-                                const item = data[ctx.dataIndex];
-                                const total = data.reduce((s, d) => s + d.count, 0);
-                                const pct = ((item.count / total) * 100).toFixed(1);
-                                return ['Count: ' + item.count, 'Amount: ' + formatCurrency(item.amount), 'Percentage: ' + pct + '%'];
-                            }
-                        }
-                    }
-                },
-                elements: { arc: { borderWidth: 0 } }
-            }
-        });
+        // Convert to standardized format: { label, value, amount }
+        const standardizedData = data.map(item => ({
+            label: item.category_name,
+            value: item.count,
+            amount: item.amount
+        }));
 
-        const totalCount = data.reduce((s, i) => s + i.count, 0);
-        const legendHtml = data.map((item, idx) => {
-            const pct = ((item.count / totalCount) * 100).toFixed(1);
-            return (
-                '<div class="legend-item modern-legend">' +
-                '<div class="legend-indicator">' +
-                '<span class="legend-color" style="background: linear-gradient(135deg, ' + chartColors.category[idx] + ', ' + chartColors.categoryHover[idx] + ')"></span>' +
-                '</div>' +
-                '<div class="legend-content">' +
-                '<div class="legend-label">' + item.category_name + '</div>' +
-                '<div class="legend-stats">' +
-                '<span class="legend-count">' + item.count + '</span>' +
-                '<span class="legend-percentage">' + pct + '%</span>' +
-                '</div>' +
-                '<div class="legend-amount">' + formatCurrency(item.amount) + '</div>' +
-                '</div>' +
-                '</div>'
-            );
-        }).join('');
-        const legendEl = byId(state.ids.categoryLegend);
-        if (legendEl) legendEl.innerHTML = legendHtml;
+        state.charts.category = createPieChart({
+            chartKey: 'invoice_category',
+            canvasId: state.ids.categoryChart,
+            legendId: state.ids.categoryLegend,
+            data: standardizedData,
+            colors: chartColors.category,
+            colorsHover: chartColors.categoryHover
+        });
     }
 
     function updateComparisonChart(comparisonData) {

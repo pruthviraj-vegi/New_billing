@@ -40,7 +40,7 @@
         <span class="breadcrumb-active">{{ invoice.invoice_number }}</span>
     </nav>
     <!-- Main Layout -->
-    <div class="col d-flex flex-row gap-2">
+    <div class="col d-flex flex-row">
         <!-- Left Column - Invoice Details -->
         <div class="col-md-2 d-flex flex-column gap-2">
             <!-- Invoice Details Column -->
@@ -171,7 +171,7 @@
             {% endif %}
         </div>
         <!-- Right Column - Tables -->
-        <div class="col-md-10">
+        <div class="col-md-10 d-flex flex-column gap-2 ps-1">
             <!-- Invoice Items Table -->
             <div class="table-section" id="itemsSection">
                 <div class="table-header">
@@ -197,7 +197,7 @@
                                     <tr>
                                         <td>
                                             <div class="product-info">
-                                                <strong><a style="text-decoration: none; color: inherit;" href="{% url 'inventory_products:details' item.product_variant.product.id %}" target="_blank">
+                                                <strong><a style=" color: inherit;" href="{% url 'inventory_products:details' item.product_variant.product.id %}" target="_blank">
                                                     {{ item.product_variant.product.brand }}</a></strong>
                                                 <br>
                                                 <small class="text-muted">{{ item.product_variant.product.category.name }}</small>
@@ -205,7 +205,7 @@
                                         </td>
                                         <td>
                                             <div class="variant-info">
-                                                <strong><a style="text-decoration: none; color: inherit;" href="{% url 'inventory_variant:details' item.product_variant.id %}" target="_blank">
+                                                <strong><a style=" color: inherit;" href="{% url 'inventory_variant:details' item.product_variant.id %}" target="_blank">
                                                     {{ item.product_variant.simple_name }}</a></strong>
                                                     <br>
                                                 {% if item.product_variant.size %}

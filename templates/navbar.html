@@ -84,6 +84,8 @@
         <span>Customers</span>
       </a>
       <div class="dropdown-menu">
+        <a href="{% url 'customer:dashboard' %}"
+           class="dropdown-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a>
         <a href="{% url 'customer:home' %}"
            class="dropdown-item {% if request.resolver_match.url_name == 'home' %}active{% endif %}">Customer List</a>
         <a href="{% url 'customer:create' %}"
@@ -98,6 +100,8 @@
         <span>Suppliers</span>
       </a>
       <div class="dropdown-menu">
+        <a href="{% url 'supplier:dashboard' %}"
+           class="dropdown-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a>
         <a href="{% url 'supplier:home' %}"
            class="dropdown-item {% if request.resolver_match.url_name == 'home' %}active{% endif %}">Supplier List</a>
         <a href="{% url 'supplier:create' %}"

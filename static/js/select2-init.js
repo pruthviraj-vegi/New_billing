@@ -92,3 +92,59 @@ document.addEventListener('DOMContentLoaded', function () {
         waitForJQuery();
     }
 });
+
+// Global Select2 focus-blur behavior
+(function () {
+    function ensureOverlay() {
+        var existing = document.getElementById('focus-blur-overlay');
+        if (existing) return existing;
+        var overlay = document.createElement('div');
+        overlay.id = 'focus-blur-overlay';
+        overlay.className = 'focus-blur-overlay';
+        overlay.style.display = 'none';
+        overlay.addEventListener('mousedown', function () {
+            var openDropdown = document.querySelector('.select2-container--open');
+            if (openDropdown) {
+                var select = $(openDropdown).prev('select');
+                if (select && select.length) select.select2('close');
+            }
+        });
+        document.body.appendChild(overlay);
+        return overlay;
+    }
+
+    function showOverlay() { ensureOverlay().style.display = 'block'; }
+    function hideOverlay() { var o = document.getElementById('focus-blur-overlay'); if (o) o.style.display = 'none'; }
+
+    function elevateSelect2($select) {
+        try {
+            var container = $select.data('select2')?.$container?.get(0);
+            if (container) container.classList.add('elevate-focus');
+        } catch (e) { }
+    }
+    function resetElevation($select) {
+        try {
+            var container = $select.data('select2')?.$container?.get(0);
+            if (container) container.classList.remove('elevate-focus');
+        } catch (e) { }
+    }
+
+    if (typeof window !== 'undefined') {
+        function bindHandlers() {
+            if (!window.jQuery) { setTimeout(bindHandlers, 100); return; }
+            $(document)
+                .on('select2:open', function (e) {
+                    showOverlay();
+                    elevateSelect2($(e.target));
+                })
+                .on('select2:close', function (e) {
+                    resetElevation($(e.target));
+                    setTimeout(function () {
+                        var anyOpen = document.querySelector('.select2-container--open');
+                        if (!anyOpen) hideOverlay();
+                    }, 0);
+                });
+        }
+        bindHandlers();
+    }
+})();

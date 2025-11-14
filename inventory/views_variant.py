@@ -72,9 +72,8 @@ def variant_home(request):
     return render(request, "inventory/product_variant/home.html", context)
 
 
-@login_required
-def fetch_variants(request):
-    """AJAX endpoint to fetch variants with search, filter, and pagination."""
+def get_variants_data(request):
+
     # Get search and filter parameters
     search_query = request.GET.get("search", "")
     category_filter = request.GET.get("category", "")
@@ -131,6 +130,14 @@ def fetch_variants(request):
         sort_by = "-created_at"
     variants = variants.order_by(sort_by)
 
+    return variants
+
+
+@login_required
+def fetch_variants(request):
+    """AJAX endpoint to fetch variants with search, filter, and pagination."""
+    variants = get_variants_data(request)
+
     # Pagination
     paginator = Paginator(variants, VARIANTS_PER_PAGE)
     page_number = request.GET.get("page")
@@ -140,7 +147,6 @@ def fetch_variants(request):
     context = {
         "page_obj": page_obj,
         "total_count": paginator.count,
-        "search_query": search_query,
     }
 
     # Render the table content (without pagination)

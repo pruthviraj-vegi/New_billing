@@ -293,14 +293,14 @@
     })
     
     // Form validation for supplier invoice with custom modal
-    let formSubmissionAllowed = false
-    
+    let allowSubmitWithoutInvoice = false
+
     document.querySelector('form').addEventListener('submit', function (e) {
-      // Check if supplier invoice is selected
       const supplierInvoiceField = document.getElementById('{{ form.supplier_invoice.id_for_label }}')
       if (supplierInvoiceField) {
         const selectedInvoice = supplierInvoiceField.value
-        if (!selectedInvoice || selectedInvoice === '') {
+        const isEmpty = !selectedInvoice || selectedInvoice === ''
+        if (isEmpty && !allowSubmitWithoutInvoice) {
           e.preventDefault()
           showSupplierInvoiceModal()
           return false
@@ -326,7 +326,7 @@
     
     document.getElementById('modalContinueBtn').addEventListener('click', function () {
       hideSupplierInvoiceModal()
-      // Submit the form
+      allowSubmitWithoutInvoice = true
       document.querySelector('form').submit()
     })
     

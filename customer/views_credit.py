@@ -41,17 +41,26 @@ VALID_SORT_FIELDS = {
 
 CUSTOMERS_PER_PAGE = 20
 
+
 def home(request):
     """Credit management main page - initial load only."""
     # For initial page load, just render the template with empty data
     return render(request, "credit/home.html")
 
 
-def fetch_credits(request):
-    """AJAX endpoint to fetch credit customers with search, filter, and pagination."""
+def total_credit_customers_data(request):
+    total_outstanding = Decimal("0.00")
+    customers = Customer.objects.filter(is_deleted=False)
+    for customer in customers:
+        total_outstanding += customer.balance_amount.quantize(Decimal("0.01"))
+
+    return total_outstanding
+
+
+def credit_customers_data(request):
+
     # Get search and filter parameters
     search_query = request.GET.get("search", "")
-    status_filter = request.GET.get("status", "")
     sort_by = request.GET.get("sort", "-created_at")
 
     # Apply search filter
@@ -65,20 +74,33 @@ def fetch_credits(request):
         )
 
     # Get customers with credit invoices or payments
-    customers = Customer.objects.filter(
-        Q(invoices__payment_type=Invoice.PaymentType.CREDIT)
-        | Q(credit_payment__isnull=False)
-    ).filter(filters).distinct()
+    customers = (
+        Customer.objects.filter(
+            Q(invoices__payment_type=Invoice.PaymentType.CREDIT)
+            | Q(credit_payment__isnull=False)
+        )
+        .filter(filters)
+        .distinct()
+    )
 
     # Apply sorting
     if sort_by not in VALID_SORT_FIELDS:
         sort_by = "-created_at"
-    
+
     # Handle sorting for model properties that can't be sorted in database
-    if sort_by in ["credit_amount", "-credit_amount", "debit_amount", "-debit_amount", "balance_amount", "-balance_amount", "last_date", "-last_date"]:
+    if sort_by in [
+        "credit_amount",
+        "-credit_amount",
+        "debit_amount",
+        "-debit_amount",
+        "balance_amount",
+        "-balance_amount",
+        "last_date",
+        "-last_date",
+    ]:
         # Convert to list to enable Python sorting
         customers_list = list(customers)
-        
+
         # Define sorting key based on the field
         if sort_by in ["credit_amount", "-credit_amount"]:
             key_func = lambda c: c.credit_amount
@@ -90,12 +112,14 @@ def fetch_credits(request):
             # Handle None values by putting them at the end
             # For ascending: None values go to end (use max date)
             # For descending: None values go to end (use min date)
-            key_func = lambda c: c.last_date or (datetime.min if sort_by.startswith("-") else datetime.max)
-        
+            key_func = lambda c: c.last_date or (
+                datetime.min if sort_by.startswith("-") else datetime.max
+            )
+
         # Sort with reverse for descending
         reverse = sort_by.startswith("-")
         customers_list.sort(key=key_func, reverse=reverse)
-        
+
         # Convert back to queryset-like object for pagination
         customers = customers_list
     else:
@@ -104,80 +128,29 @@ def fetch_credits(request):
 
     # Add overdue flag for customers with last activity more than 6 months ago
     six_months_ago = datetime.now() - timedelta(days=180)
-    
+
     for customer in customers:
         if customer.last_date and customer.last_date < six_months_ago:
             customer.is_overdue = True
         else:
             customer.is_overdue = False
 
+    return customers
+
+
+def fetch_credits(request):
+    """AJAX endpoint to fetch credit customers with search, filter, and pagination."""
+    customers = credit_customers_data(request)
+
     # Pagination
-    if isinstance(customers, list):
-        # Manual pagination for sorted lists
-        page_number = int(request.GET.get("page", 1))
-        start_index = (page_number - 1) * CUSTOMERS_PER_PAGE
-        end_index = start_index + CUSTOMERS_PER_PAGE
-        
-        # Create a mock page object for template compatibility
-        class MockPage:
-            def __init__(self, object_list, page_number, paginator):
-                self.object_list = object_list
-                self.number = page_number
-                self.paginator = paginator
-            
-            def __iter__(self):
-                return iter(self.object_list)
-            
-            def __len__(self):
-                return len(self.object_list)
-            
-            @property
-            def start_index(self):
-                return (self.number - 1) * self.paginator.per_page + 1
-            
-            @property
-            def end_index(self):
-                return min(self.start_index + len(self.object_list) - 1, self.paginator.count)
-            
-            @property
-            def has_previous(self):
-                return self.number > 1
-            
-            @property
-            def has_next(self):
-                return self.number < self.paginator.num_pages
-            
-            @property
-            def previous_page_number(self):
-                return self.number - 1 if self.has_previous else None
-            
-            @property
-            def next_page_number(self):
-                return self.number + 1 if self.has_next else None
-                
-        class MockPaginator:
-            def __init__(self, total_count, per_page):
-                self.count = total_count
-                self.per_page = per_page
-                self.num_pages = (total_count + per_page - 1) // per_page if total_count > 0 else 1
-            
-            @property
-            def page_range(self):
-                return range(1, self.num_pages + 1)
-                
-        paginator = MockPaginator(len(customers), CUSTOMERS_PER_PAGE)
-        page_obj = MockPage(customers[start_index:end_index], page_number, paginator)
-    else:
-        # Regular pagination for querysets
-        paginator = Paginator(customers, CUSTOMERS_PER_PAGE)
-        page_number = request.GET.get("page")
-        page_obj = paginator.get_page(page_number)
+    paginator = Paginator(customers, CUSTOMERS_PER_PAGE)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
 
     # Render the HTML template
     context = {
         "page_obj": page_obj,
         "total_count": paginator.count,
-        "search_query": search_query,
     }
 
     # Render the table content (without pagination)
@@ -195,11 +168,8 @@ def fetch_credits(request):
     )
 
 
-@login_required
-def credit_detail(request, customer_id: int):
-    template = "credit/detail.html"
-    customer = get_object_or_404(Customer, pk=customer_id)
-
+def _build_ledger_rows(customer):
+    """Helper function to build unified ledger rows from invoices and payments."""
     # Fetch credit invoices with allocation information
     credit_invoices = (
         Invoice.objects.filter(
@@ -286,6 +256,100 @@ def credit_detail(request, customer_id: int):
             }
         )
 
+    return rows
+
+
+@login_required
+def fetch_credit_ledger(request, customer_id: int):
+    """AJAX: fetch credit ledger entries for a customer with pagination and optional sorting."""
+    customer = get_object_or_404(Customer, pk=customer_id)
+
+    sort_by = (request.GET.get("sort") or "-date").strip()
+    valid_sort_fields = {
+        "date",
+        "-date",
+        "credit",
+        "-credit",
+        "debit",
+        "-debit",
+        "outstanding",
+        "-outstanding",
+    }
+    if sort_by not in valid_sort_fields:
+        sort_by = "-date"
+
+    # Build all ledger rows
+    rows = _build_ledger_rows(customer)
+
+    # Sort rows
+    if sort_by == "date":
+        rows.sort(key=lambda r: (r["date"] or datetime.min, r["type"]))
+    elif sort_by == "-date":
+        rows.sort(key=lambda r: (r["date"] or datetime.max, r["type"]), reverse=True)
+    elif sort_by == "credit":
+        rows.sort(
+            key=lambda r: (r["credit"] or Decimal("0"), r["date"] or datetime.min)
+        )
+    elif sort_by == "-credit":
+        rows.sort(
+            key=lambda r: (r["credit"] or Decimal("0"), r["date"] or datetime.max),
+            reverse=True,
+        )
+    elif sort_by == "debit":
+        rows.sort(key=lambda r: (r["debit"] or Decimal("0"), r["date"] or datetime.min))
+    elif sort_by == "-debit":
+        rows.sort(
+            key=lambda r: (r["debit"] or Decimal("0"), r["date"] or datetime.max),
+            reverse=True,
+        )
+    elif sort_by == "outstanding":
+        rows.sort(
+            key=lambda r: (
+                r.get("outstanding", Decimal("0")) or Decimal("0"),
+                r["date"] or datetime.min,
+            )
+        )
+    elif sort_by == "-outstanding":
+        rows.sort(
+            key=lambda r: (
+                r.get("outstanding", Decimal("0")) or Decimal("0"),
+                r["date"] or datetime.max,
+            ),
+            reverse=True,
+        )
+
+    # Pagination
+    paginator = Paginator(rows, 15)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        "customer": customer,
+        "page_obj": page_obj,
+        "total_count": paginator.count,
+    }
+
+    table_html = render_to_string("credit/ledger/fetch.html", context, request=request)
+
+    pagination_html = ""
+    if page_obj and page_obj.paginator.num_pages > 1:
+        pagination_html = render_to_string(
+            "common/_pagination.html", context, request=request
+        )
+
+    return JsonResponse(
+        {"html": table_html, "pagination": pagination_html, "success": True}
+    )
+
+
+@login_required
+def credit_detail(request, customer_id: int):
+    template = "credit/detail.html"
+    customer = get_object_or_404(Customer, pk=customer_id)
+
+    # Build all ledger rows for totals calculation
+    rows = _build_ledger_rows(customer)
+
     # Sort rows by date descending, then type for stability
     rows.sort(key=lambda r: (r["date"] or 0, r["type"]), reverse=True)
 
@@ -305,15 +369,15 @@ def credit_detail(request, customer_id: int):
     )
 
     # Calculate unallocated amount (sum of unallocated amounts from "Paid" payments)
+    payments = Payment.objects.filter(customer=customer)
     unallocated_amount = sum(
-        pay.get("unallocated_amount", Decimal("0"))
+        pay.unallocated_amount or Decimal("0")
         for pay in payments
-        if pay["payment_type"] == Payment.PaymentType.Paid
+        if pay.payment_type == Payment.PaymentType.Paid
     )
 
     context = {
         "customer": customer,
-        "rows": rows,
         "total_credit": total_credit,
         "total_debit": total_debit,
         "balance": balance,
@@ -425,7 +489,7 @@ class PaymentDeleteView(DeleteView):
         logger.error(f"Form invalid: {form.errors}")
         messages.error(self.request, "Please correct the errors below.")
         return super().form_invalid(form)
-        
+
 
 def _auto_allocate_payment(payment, user):
     """Auto-allocate payment using FIFO method."""

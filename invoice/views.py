@@ -11,7 +11,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.core.paginator import Paginator
 from inventory.services import InventoryService
-from datetime import timedelta, datetime, date
+from datetime import timedelta
 from invoice.views_ import resequence_invoices
 from django.template.loader import render_to_string
 import json
@@ -309,10 +309,12 @@ def invoiceHome(request):
     """Invoice management main page - initial load only."""
     # For initial page load, just render the template with empty data
 
-    financial_years = (
-        Invoice.objects.filter(financial_year__isnull=False)
-        .values_list("financial_year", flat=True)
-        .distinct()
+    financial_years = sorted(
+        set(
+            Invoice.objects.filter(financial_year__isnull=False).values_list(
+                "financial_year", flat=True
+            )
+        )
     )
     context = {
         "payment_status_choices": Invoice.PaymentStatus.choices,

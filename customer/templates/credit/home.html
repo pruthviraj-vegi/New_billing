@@ -9,6 +9,10 @@
     <div class="page-header">
         <h2 class="heading page-title">Credit Management</h2>
         <div class="page-actions">
+            <a href="#" id="downloadBtn" class="btn btn-primary">
+                <i class="fas fa-download"></i>
+                Download
+            </a>
             <a href="{% url 'customer:create' %}" class="btn btn-primary">
                 <i class="fas fa-plus"></i>
                 New Customer
@@ -95,10 +99,6 @@
             </table>
     </div>
     
-    <!-- Pagination Wrapper - Outside table for better styling -->
-    <div class="pagination-wrapper" id="pagination_wrapper">
-        <!-- Pagination will be loaded here via AJAX -->
-    </div>
 {% endblock content %}
 
 {% block extra_js %}
@@ -107,6 +107,7 @@
         urls = {
             fetch: '{% url "customer:credit_fetch" %}',
             suggestions: '{% url "suggestions:customer_all" %}',
+            credit_customers_pdf: '{% url "report:credit_customers_pdf" %}',
         }
     </script>
     <!-- Load dependencies -->
@@ -134,6 +135,16 @@
                 placeholder: 'Loading customers...',
                 includeInputs: false
             });
+
+
+            // Setup download button using fetchData.js helper functions
+            const downloadBtn = document.getElementById('downloadBtn');
+            if (downloadBtn) {
+                downloadBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    downloadTablePDF('searchForm', 'data_table', urls.credit_customers_pdf);
+                });
+            }
         });
     </script>
     

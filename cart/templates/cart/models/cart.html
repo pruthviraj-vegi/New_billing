@@ -3,7 +3,7 @@
 <!-- Data Table -->
 <!-- Search and Filter Section -->
 <div class="search-filter-section">
-    <form href="" class="search-filter-form" id="barcodeForm">
+    <form href="" class="search-filter-form" id="barcodeForm" data-prevent-double-submit>
         {% csrf_token %}
         <div class="search-group search-expanded">
             <i class="fas fa-search search-icon"></i>
@@ -25,7 +25,11 @@
     <div class="col-lg-6">
         <div class="row-lg-6">
             <span class="label">Items:</span>
-            <span class="value strong " id="totalItems">{{ cart_list|length }}</span>
+            <span class="value strong " id="totalItems">{{ cart_list|currency }}</span>
+        </div>
+        <div class="row-lg-6">
+            <span class="label">Total Amount:</span>
+            <span class="value" id="totalSellingPrice">{{ total_selling_price|currency }}</span>
         </div>
         <div class="row-lg-6">
             <span class="label">Amount:</span>
@@ -95,7 +99,7 @@
                 <th>Barcode</th>
                 <th>Product</th>
                 <th>Variant</th>
-                <th>Selling Price</th>
+                <th id="priceColumnHeader">Selling Price</th>
                 <th>Quantity</th>
                 <th>Price</th>
                 <th>Discount</th>
@@ -109,7 +113,11 @@
                     <td>{{ data.product_variant.barcode }}</td>
                     <td>{{ data.product_variant.product.brand }}</td>
                     <td>{{ data.product_variant.simple_name }}</td>
-                    <td>{{ data.product_variant.mrp|currency }}</td>
+                    <td class="price-toggle-cell"
+                        data-selling-price="{{ data.product_variant.mrp }}"
+                        data-purchase-price="{{ data.product_variant.purchase_price }}">
+                        <span class="price-display">{{ data.product_variant.mrp|currency }}</span>
+                    </td>
                     <td>
                         <input type="number"
                                class="form-input quantity-input"
@@ -183,4 +191,5 @@
     </script>
     <!-- External Cart JavaScript -->
     <script src="{% static 'js/cart.js' %}"></script>
+    <script src="{% static 'js/counting.js' %}"></script>
 {% endblock extra_js %}

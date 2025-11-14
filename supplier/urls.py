@@ -6,7 +6,15 @@ app_name = "supplier"
 
 urlpatterns = [
     path("", views.home, name="home"),
+    path("fetch/", views.fetch_suppliers, name="fetch"),
+    path(
+        "<int:pk>/invoices/fetch/", views.fetch_supplier_invoices, name="fetch_invoices"
+    ),
+    path(
+        "<int:pk>/payments/fetch/", views.fetch_supplier_payments, name="fetch_payments"
+    ),
     path("dashboard/", views.dashboard, name="dashboard"),
+    path("dashboard/fetch/", views.dashboard_fetch, name="dashboard_fetch"),
     path("create/", views.CreateSupplier.as_view(), name="create"),
     path("<int:pk>/", views.supplier_detail, name="detail"),
     path("<int:pk>/edit/", views.EditSupplier.as_view(), name="edit"),

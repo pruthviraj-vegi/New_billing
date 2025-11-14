@@ -2,10 +2,9 @@ from django.db import models, transaction
 from django.conf import settings
 from supplier.models import SupplierInvoice
 from base.manager import SoftDeleteModel
-from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
+from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
 import random, string
-from django.core.exceptions import ValidationError
 from .manager import ProductVariantManager
 
 from base.utility import StringProcessor
@@ -268,28 +267,23 @@ class ProductVariant(SoftDeleteModel):
         DISCONTINUED = "DISCONTINUED", "Discontinued"
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["product", "size", "color"],
-                name="unique_product_size_color",
-                condition=models.Q(size__isnull=False, color__isnull=False),
-            ),
-            models.UniqueConstraint(
-                fields=["product", "size"],
-                name="unique_product_size_null_color",
-                condition=models.Q(size__isnull=False, color__isnull=True),
-            ),
-            models.UniqueConstraint(
-                fields=["product", "color"],
-                name="unique_product_color_null_size",
-                condition=models.Q(size__isnull=True, color__isnull=False),
-            ),
-            models.UniqueConstraint(
-                fields=["product"],
-                name="unique_product_null_size_null_color",
-                condition=models.Q(size__isnull=True, color__isnull=True),
-            ),
-        ]
+        # constraints = [
+        #     models.UniqueConstraint(
+        #         fields=["product", "size", "color"],
+        #         name="unique_product_size_color",
+        #         condition=models.Q(size__isnull=False, color__isnull=False),
+        #     ),
+        #     models.UniqueConstraint(
+        #         fields=["product", "size"],
+        #         name="unique_product_size_null_color",
+        #         condition=models.Q(size__isnull=False, color__isnull=True),
+        #     ),
+        #     models.UniqueConstraint(
+        #         fields=["product", "color"],
+        #         name="unique_product_color_null_size",
+        #         condition=models.Q(size__isnull=True, color__isnull=False),
+        #     ),
+        # ]
         indexes = [
             models.Index(fields=["status"]),
             models.Index(fields=["barcode"]),
@@ -373,7 +367,17 @@ class ProductVariant(SoftDeleteModel):
             MaxValueValidator(100, "Discount cannot exceed 100%"),
         ],
     )
-
+    commission_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0"),
+        null=True,
+        blank=True,
+        validators=[
+            MinValueValidator(Decimal("0"), "Commission cannot be negative"),
+            MaxValueValidator(100, "Commission cannot exceed 100%"),
+        ],
+    )
     status = models.CharField(
         max_length=20, choices=VariantStatus.choices, default=VariantStatus.ACTIVE
     )
@@ -489,11 +493,6 @@ class ProductVariant(SoftDeleteModel):
     def price_name(self):
         """Short name without barcode for display purposes"""
         return self.get_name(include_barcode=False, include_variants=False)
-
-    @property
-    def price_name(self):
-        """Short name without barcode for display purposes"""
-        return self.get_name(include_barcode=False, include_variants=True)
 
     @property
     def is_low_stock(self):

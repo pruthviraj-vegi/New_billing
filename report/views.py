@@ -3,6 +3,7 @@ from weasyprint import HTML
 from django.shortcuts import render
 from django.http import HttpResponse
 from django.template.loader import get_template
+from django.contrib.auth.decorators import login_required
 import io
 import qrcode
 from barcode import Code128
@@ -14,6 +15,15 @@ from inventory.models import ProductVariant
 from invoice.models import Invoice, InvoiceItem
 from setting.models import ShopDetails, ReportConfiguration
 from cart.models import Cart, CartItem
+from datetime import datetime
+
+from customer.views import get_data
+from customer.views_credit import credit_customers_data, total_credit_customers_data
+from supplier.views import (
+    get_suppliers_data,
+    get_total_outstanding_balance as supplier_total_outstanding_balance,
+)
+from inventory.views_variant import get_variants_data
 
 Barcode.default_writer_options["write_text"] = False
 
@@ -47,8 +57,10 @@ def generatePdf(template_name, file_name, context, request, report_type="INVOICE
     pdf_file = HTML(string=html, base_url=request.build_absolute_uri()).write_pdf(
         presentational_hints=True
     )
+
+    filename = f"{file_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     response = HttpResponse(pdf_file, content_type="application/pdf")
-    response["Content-Disposition"] = f'filename="{file_name}.pdf"'
+    response["Content-Disposition"] = f'filename="{filename}.pdf"'
     response["pdfkit-dpi"] = "800"  # Set the DPI to 300
     return response
 
@@ -138,3 +150,93 @@ def generate_barcode(request, pk):
         "shop_details": shop_details,
     }
     return render(request, template, context)
+
+
+@login_required
+def generate_customers_pdf(request):
+    """Generate PDF for customers list with search and sort parameters."""
+
+    # Get customers using the same logic as fetch_customers
+    customers = get_data(request)
+
+    # Prepare context
+    context = {
+        "customers": customers,
+        "total_count": customers.count(),
+    }
+
+    # Render template
+    template = "customer_pdf.html"
+
+    filename = "customers"
+
+    return generatePdf(template, filename, context, request)
+
+
+@login_required
+def generate_credit_pdf(request):
+    """Generate PDF for credit customers list with search and sort parameters."""
+    customers = credit_customers_data(request)
+    total_outstanding = total_credit_customers_data(request)
+
+    if isinstance(customers, list):
+        count = len(customers)
+    else:
+        count = customers.count()
+
+    # Prepare context
+    context = {
+        "customers": customers,
+        "total_count": count,
+        "total_outstanding": total_outstanding,
+    }
+
+    # Render template
+    template = "customer_credit.html"
+    filename = "credit_customers"
+
+    return generatePdf(template, filename, context, request)
+
+
+@login_required
+def generate_suppliers_pdf(request):
+    """Generate PDF for suppliers list with search and sort parameters."""
+    suppliers = get_suppliers_data(request)
+    total_outstanding = supplier_total_outstanding_balance()
+
+    if isinstance(suppliers, list):
+        count = len(suppliers)
+    else:
+        count = suppliers.count()
+
+    # Prepare context
+    context = {
+        "suppliers": suppliers,
+        "total_count": count,
+        "total_outstanding": total_outstanding,
+    }
+
+    # Render template
+    template = "suppliers_pdf.html"
+    filename = "suppliers"
+
+    return generatePdf(template, filename, context, request)
+
+
+@login_required
+def generate_variants_pdf(request):
+    """Generate PDF for variants list with search and sort parameters."""
+    variants = get_variants_data(request)
+    total_count = variants.count()
+
+    # Prepare context
+    context = {
+        "variants": variants,
+        "total_count": total_count,
+    }
+
+    # Render template
+    template = "variants_pdf.html"
+    filename = "variants"
+
+    return generatePdf(template, filename, context, request)

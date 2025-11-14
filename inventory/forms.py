@@ -62,11 +62,23 @@ class ProductForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Set initial HSN code - first active one if exists, else None
+        # Set initial HSN code - first active one if exists, else raise error
         if not self.instance.pk:  # Only for new products (not editing)
-            first_hsn = GSTHsnCode.objects.filter(is_active=True).first()
-            if first_hsn:
-                self.fields["hsn_code"].initial = first_hsn
+            try:
+                first_hsn = GSTHsnCode.objects.filter(is_active=True).first()
+                if first_hsn:
+                    self.fields["hsn_code"].initial = first_hsn
+                else:
+                    raise ValueError(
+                        "No active GST HSN codes found. Please add at least one active HSN code before creating products."
+                    )
+            except Exception as e:
+                # Handle case where table doesn't exist yet (during migrations)
+                if "does not exist" in str(e) or "relation" in str(e):
+                    # Don't set initial value if table doesn't exist
+                    pass
+                else:
+                    raise
 
 
 class VariantForm(forms.ModelForm):
@@ -87,6 +99,7 @@ class VariantForm(forms.ModelForm):
             "product",
             "barcode",
             "damaged_quantity",
+            # "commission_percentage"
             "status",
             "created_by",
             "extra_attributes",
@@ -110,6 +123,12 @@ class VariantForm(forms.ModelForm):
             "gst_percentage": forms.NumberInput(
                 attrs={"class": "form-input", "placeholder": "Enter GST percentage"}
             ),
+            # "commission_percentage": forms.NumberInput(
+            #     attrs={
+            #         "class": "form-input",
+            #         "placeholder": "Enter commission percentage",
+            #     }
+            # ),
             "purchase_price": forms.NumberInput(
                 attrs={"class": "form-input", "placeholder": "Enter purchase price"}
             ),
@@ -119,9 +138,9 @@ class VariantForm(forms.ModelForm):
             "size": forms.Select(
                 attrs={"class": "form-input", "placeholder": "Select size"}
             ),
-            "color": forms.Select(
-                attrs={"class": "form-input", "placeholder": "Select color"}
-            ),
+            # "color": forms.Select(
+            #     attrs={"class": "form-input", "placeholder": "Select color"}
+            # ),
         }
 
     def clean_quantity(self):

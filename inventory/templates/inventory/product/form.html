@@ -1,33 +1,23 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}
-  {% if product %}
-    Edit Product - {{ product.display_name }}
-  {% else %}
-    Create Product
-  {% endif %}
+  {{ title }}
 {% endblock title %}
 {% block content %}
   <!-- Page Header -->
   <div class="page-header">
-    <h2 class="page-title">
-      {% if product %}
-        Edit Product
-      {% else %}
-        Create New Product
-      {% endif %}
-    </h2>
+    <h2 class="page-title">{{ title }}</h2>
     <div class="page-actions">
       {% if product %}
         <a href="{% url 'inventory_products:details' product.id %}"
            class="btn btn-secondary">
           <i class="fas fa-arrow-left"></i>
-          Back to Product
+          Back to Details
         </a>
       {% endif %}
       <a href="{% url 'inventory_products:home' %}" class="btn btn-secondary">
         <i class="fas fa-list"></i>
-        Back to Products
+        Back to List
       </a>
     </div>
   </div>
@@ -36,7 +26,8 @@
     <a href="{% url 'inventory_products:home' %}" class="breadcrumb-item">Products</a>
     <span class="breadcrumb-separator">/</span>
     {% if product %}
-      <span class="breadcrumb-item">{{ product.name }}</span>
+      <a href="{% url 'inventory_products:details' product.id %}"
+         class="breadcrumb-item">{{ product.name }}</a>
       <span class="breadcrumb-separator">/</span>
       <span class="breadcrumb-active">Edit</span>
     {% else %}
@@ -61,8 +52,8 @@
         {% endif %}
         
         <!-- Product Details Section -->
-        <div class="form-section">
-          <h5 class="form-section-title">Product Details</h5>
+        <div class="form-section ">
+          <h5 class="section-title">Product Details</h5>
           <!-- Row 1: Brand and Name -->
           <div class="row">
             <div class="col-md-6">
@@ -219,41 +210,34 @@
     </div>
   </div>
 
-  <!-- Simple Modals -->
   {% include "model_forms/category.html" %}
-  {% include "model_forms/cloth.html" %}
   {% include "model_forms/uom.html" %}
   {% include "model_forms/hsncode.html" %}
 
-  
 {% endblock content %}
 <!-- Simple Modal System (20 lines total!) -->
 {% block extra_js %}
   <script src="{% static 'js/modelSetup.js' %}"></script>
   <script src="{% static 'js/wordSuggestion.js' %}"></script>
-
   <script>
     const urls = {
       suggestions: '{% url "suggestions:product_all" %}'
     }
-    
-    // Wait for DOM to be fully loaded
+
+
     $(document).ready(function() {
-      
-      // Initialize Select2 using the helper
+
+      setupModal('id_category', 'Category', 'new_category', '#add_new_category', '{% url "inventory:category_create_ajax" %}');
+      setupModal('id_uom', 'UOM', 'new_uom', '#add_new_uom', '{% url "inventory:uom_create_ajax" %}');
+      setupModal('id_hsn_code', 'HSN Code', 'new_hsn_code', '#add_new_hsn_code', '{% url "inventory:gst_hsn_create_ajax" %}');
+     
+      // Intentionally minimal JS to mirror customer form behavior
       Select2Helper.init('#id_uom, #id_hsn_code');
-      
-      // Initialize category separately (sometimes needs different timing)
+
       setTimeout(function() {
         Select2Helper.init('#id_category');
       }, 100);
-      
-      setupModal('id_category', 'Category', 'new_category', '#add_new_category', '{% url "inventory:category_create_ajax" %}');
-      {% comment %} setupModal('id_cloth_type', 'Cloth Type', 'new_cloth_type', '#add_new_cloth_type', '{% url "inventory:cloth_create_ajax" %}'); {% endcomment %}
-      setupModal('id_uom', 'UOM', 'new_uom', '#add_new_uom', '{% url "inventory:uom_create_ajax" %}');
-      setupModal('id_hsn_code', 'HSN Code', 'new_hsn_code', '#add_new_hsn_code', '{% url "inventory:gst_hsn_create_ajax" %}');
 
-      // Now you can use jQuery-like syntax!
       $('#id_brand').wordSuggestion({
         url: urls.suggestions
       });

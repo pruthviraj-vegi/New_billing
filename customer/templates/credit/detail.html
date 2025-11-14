@@ -17,8 +17,11 @@
         <i class="fas fa-plus"></i>
         Add Payment
       </a>
-      <a href="{% url 'customer:credit_auto_reallocate' customer.id %}" class="btn btn-warning">
-        <i class="fas fa-sync"></i>
+      <a href="{% url 'customer:credit_auto_reallocate' customer.id %}"
+         class="btn btn-warning"
+         id="autoReallocateBtn"
+         onclick="return confirmAutoReallocate()">
+        <i class="fas fa-sync-alt"></i>
         Auto Reallocate
       </a>
     </div>
@@ -32,11 +35,11 @@
     <span class="breadcrumb-active">{{ customer.name }}</span>
   </nav>
 
-  <!-- Main Layout (mirror invoice detail theme) -->
-  <div class="col d-flex flex-row gap-2">
+  <!-- Main Layout -->
+  <div class="col d-flex flex-row">
     <!-- Left Column - Customer Details and Summary -->
     <div class="col-md-2 d-flex flex-column gap-2">
-      <!-- Details Column -->
+      <!-- Customer Details Column -->
       <div class="column details-column">
         <div class="column-header">
           <h3>
@@ -56,16 +59,16 @@
               <span>{{ customer.phone_number|phone_number }}</span>
             </div>
             {% if customer.email %}
-            <div class="contact-item">
-              <i class="fas fa-envelope"></i>
-              <span>{{ customer.email }}</span>
-            </div>
+              <div class="contact-item">
+                <i class="fas fa-envelope"></i>
+                <span>{{ customer.email }}</span>
+              </div>
             {% endif %}
             {% if customer.address %}
-            <div class="contact-item">
-              <i class="fas fa-map-marker-alt"></i>
-              <span>{{ customer.address }}</span>
-            </div>
+              <div class="contact-item">
+                <i class="fas fa-map-marker-alt"></i>
+                <span>{{ customer.address|truncatechars:50 }}</span>
+              </div>
             {% endif %}
             <div class="contact-item">
               <i class="fas fa-calendar"></i>
@@ -75,7 +78,7 @@
         </div>
       </div>
 
-      <!-- Summary Cards (compact) -->
+      <!-- Summary Cards -->
       <div class="summary-card-compact" id="creditSummaryCard">
         <div class="summary-icon-compact">
           <i class="fas fa-money-bill"></i>
@@ -84,15 +87,15 @@
           <h4>Amounts</h4>
           <div class="summary-stats-compact">
             <div class="stat-item-compact">
-              <span class="stat-number-compact">{{ total_credit|currency_nonDecimal }}</span>
+              <span class="stat-number-compact counting-number" id="total_credit" data-count="{{ total_credit|default:0 }}">0</span>
               <span class="stat-label-compact">Total Credit</span>
             </div>
             <div class="stat-item-compact">
-              <span class="stat-number-compact">{{ total_debit|currency_nonDecimal }}</span>
+              <span class="stat-number-compact counting-number" id="total_debit" data-count="{{ total_debit|default:0 }}">0</span>
               <span class="stat-label-compact">Total Debit</span>
             </div>
             <div class="stat-item-compact">
-              <span class="stat-number-compact">{{ balance|currency_nonDecimal }}</span>
+              <span class="stat-number-compact counting-number" id="balance" data-count="{{ balance|default:0 }}">0</span>
               <span class="stat-label-compact">Outstanding</span>
             </div>
           </div>
@@ -107,11 +110,11 @@
           <h4>Payments (FIFO)</h4>
           <div class="summary-stats-compact">
             <div class="stat-item-compact">
-              <span class="stat-number-compact">{{ total_debit|currency_nonDecimal }}</span>
+              <span class="stat-number-compact counting-number" id="total_paid" data-count="{{ total_debit|default:0 }}">0</span>
               <span class="stat-label-compact">Total Paid</span>
             </div>
             <div class="stat-item-compact">
-              <span class="stat-number-compact">{{ unallocated_amount|currency_nonDecimal }}</span>
+              <span class="stat-number-compact counting-number" id="unallocated_amount" data-count="{{ unallocated_amount|default:0 }}">0</span>
               <span class="stat-label-compact">Unallocated</span>
             </div>
           </div>
@@ -120,129 +123,105 @@
     </div>
 
     <!-- Right Column - Ledger Table -->
-    <div class="col-md-10 d-flex flex-column gap-2">
+    <div class="col-md-10 d-flex flex-column gap-2 ps-1">
+      <!-- Hidden minimal forms used by AJAX table loader -->
+      <form id="dummyFormLedger" method="get" style="display:none"></form>
+      <!-- Ledger Table -->
       <div class="table-section" id="ledgerSection">
         <div class="table-header">
           <h3>
             <i class="fas fa-file-invoice-dollar"></i> Ledger
           </h3>
-          <span class="item-count">{{ rows|length }} entries</span>
+          <a href="{% url 'customer:credit_create' customer.id %}"
+             class="btn btn-sm btn-primary">
+            <i class="fas fa-plus"></i>
+            Add Payment
+          </a>
         </div>
         <div class="table-container">
-          <table class="data-table">
+          <table class="data-table" id="ledger_table" data-sort="-date">
             <thead>
               <tr>
-                <th>Date</th>
+                <th class="sortable" data-sort="date">Date</th>
                 <th>Type</th>
                 <th>Reference</th>
                 <th>Method</th>
                 <th>Notes</th>
-                <th class="text-right">Credit</th>
-                <th class="text-right">Debit</th>
-                <th class="text-right">Allocated</th>
-                <th class="text-right">Outstanding</th>
-                <th class="text-center">Action</th>
+                <th class="sortable" data-sort="credit">Credit</th>
+                <th class="sortable" data-sort="debit">Debit</th>
+                <th>Allocated</th>
+                <th class="sortable" data-sort="outstanding">Outstanding</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {% for row in rows %}
-                <tr>
-                  <td>{{ row.date|date:"M j, Y" }}</td>
-                  <td>
-                    {% if row.type == "Invoice" %}
-                      <span class="badge badge-info">Invoice</span>
-                    {% else %}
-                      <span class="badge badge-secondary">Payment</span>
-                    {% endif %}
-                  </td>
-                  <td># {{ row.ref }}</td>
-                  <td>
-                    {% if row.type == "Payment" and row.method %}
-                      <span class="badge badge-secondary">{{ row.method }}</span>
-                    {% else %}
-                      -
-                    {% endif %}
-                  </td>
-                  <td>{{ row.notes|default:"-"|truncatechars:15 }}</td>
-                  <td class="text-right">
-                    {% if row.type == "Invoice" %}
-                      <span title="Final Amount: ₹{{ row.gross_amount|floatformat:2 }} - ₹{{ row.discount_amount|floatformat:2 }} (discount) - ₹{{ row.advance_amount|floatformat:2 }} (advance) = ₹{{ row.credit|floatformat:2 }}">
-                        {{ row.credit|currency }}
-                      </span>
-                    {% else %}
-                      {{ row.credit|currency }}
-                    {% endif %}
-                  </td>
-                  <td class="text-right">{{ row.debit|currency }}</td>
-                  <td class="text-right">
-                    {% if row.type == "Invoice" %}
-                      {% if row.paid_amount > 0 %}
-                        <span class="text-success">{{ row.paid_amount|currency }}</span>
-                        {% if row.payment_status == "PAID" %}
-                          <br><small class="secondary-text text-success">✓ Fully Paid</small>
-                        {% elif row.payment_status == "PARTIALLY_PAID" %}
-                          <br><small class="secondary-text text-warning">⚠ Partially Paid</small>
-                        {% endif %}
-                      {% else %}
-                        <span class="text-muted">₹0.00</span>
-                      {% endif %}
-                    {% else %}
-                      -
-                    {% endif %}
-                  </td>
-                  <td class="text-right">
-                    {% if row.type == "Invoice" %}
-                      {% if row.outstanding > 0 %}
-                        <span class="text-danger">{{ row.outstanding|currency }}</span>
-                      {% else %}
-                        <span class="text-success">₹0.00</span>
-                      {% endif %}
-                    {% else %}
-                      -
-                    {% endif %}
-                  </td>
-                  <td class="text-center">
-                    {% if row.type == "Invoice" %}
-                      <a href="{% url 'invoice:detail' row.id %}"
-                                       class="btn-action btn-view"
-                                       title="View Invoice Details">
-                                        <i class="fas fa-eye"></i>
-                       </a>
-                    {% else %}
-                      <a href="{% url 'customer:payment_edit' row.id %}"
-                          class="btn-action btn-edit"
-                          title="Edit Payment">
-                          <i class="fas fa-edit"></i>
-                      </a>
-                      <a href="{% url 'customer:payment_delete' row.id %}"
-                          class="btn-action btn-delete"
-                          title="Delete Payment">
-                          <i class="fas fa-trash"></i>
-                      </a>
-                    {% endif %}
-                  </td>
-                </tr>
-              {% empty %}
-                <tr>
-                  <td colspan="10" class="text-center">No ledger entries</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-            {% comment %} <tfoot>
+            <tbody id="ledger_table_body">
               <tr>
-                <th colspan="5" class="text-right">Totals</th>
-                <th class="text-right">{{ total_credit|currency }}</th>
-                <th class="text-right">{{ total_debit|currency }}</th>
-                <th class="text-right">{{ total_allocated|currency }}</th>
-                <th class="text-right">{{ total_outstanding|currency }}</th>
-                <th></th>
+                <td colspan="10" class="text-center" style="padding: 2rem;">
+                  <div class="loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    Loading ledger...
+                  </div>
+                </td>
               </tr>
-            </tfoot> {% endcomment %}
+            </tbody>
           </table>
         </div>
       </div>
     </div>
   </div>
 {% endblock content %}
+{% block extra_js %}
+  <script src="{% static 'js/fetchData.js' %}"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      // Summary card click handlers
+      const creditSummaryCard = document.getElementById('creditSummaryCard')
+      const paymentSummaryCard = document.getElementById('paymentSummaryCard')
+      const ledgerSection = document.getElementById('ledgerSection')
+    
+      creditSummaryCard.addEventListener('click', function () {
+        ledgerSection.scrollIntoView({ behavior: 'smooth' })
+      })
+    
+      paymentSummaryCard.addEventListener('click', function () {
+        ledgerSection.scrollIntoView({ behavior: 'smooth' })
+      })
+      // Initialize AJAX tables
+      const urls = {
+        ledger: '{% url "customer:fetch_credit_ledger" customer.id %}'
+      }
+
+      // Use the same helper as supplier page
+      initTableAjax('dummyFormLedger', 'ledger_table', urls.ledger, { autoLoad: true });
+      initTableSorting('ledger_table');
+    })
+    
+    function confirmAutoReallocate() {
+      const confirmed = confirm('⚠️ WARNING: This action will:\n\n' + '• Delete ALL existing payment allocations\n' + '• Reapply payments using FIFO method (oldest invoices first)\n' + '• This action cannot be undone\n\n' + 'Are you sure you want to continue?')
+    
+      if (confirmed) {
+        const btn = document.getElementById('autoReallocateBtn')
+        const originalText = btn.innerHTML
+        const originalClass = btn.className
+    
+        // Show loading state
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reallocating...'
+        btn.className = 'btn btn-warning disabled'
+        btn.style.pointerEvents = 'none'
+    
+        // Re-enable after a short delay (in case of errors)
+        setTimeout(() => {
+          btn.innerHTML = originalText
+          btn.className = originalClass
+          btn.style.pointerEvents = 'auto'
+        }, 10000)
+    
+        return true
+      }
+    
+      return false
+    }
+  </script>
+{% endblock extra_js %}
 
 

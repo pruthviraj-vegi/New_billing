@@ -19,8 +19,9 @@
             <div class="cart-buttons-container" id="cartButtonsContainer">
                 {% for data in carts %}
                     <a href="{% url 'cart:getCartData' data.id %}"
-                       class="btn cart-btn {% if data.id == cart.id %}btn-primary{% else %}btn-secondary{% endif %}">
-                        {{ data.name }} - {{ data.total_amount|currency }}
+                       class="btn cart-btn {% if data.id == cart.id %}btn-primary active-cart-btn{% else %}btn-secondary{% endif %}"
+                       data-cart-id="{{ data.id }}">
+                        {{ data.name }} - <span class="value" id="cart-button-total-{{ data.id }}">{{ data.total_amount|currency }}</span>
                     </a>
                 {% endfor %}
             </div>
@@ -40,6 +41,8 @@
         <a href="#" class="breadcrumb-item">Carts</a>
         <span class="breadcrumb-separator">/</span>
         <span class="breadcrumb-active">Cart Details</span>
+        <span class="breadcrumb-separator">/</span>
+        <span class="breadcrumb-active">{{ cart.created_at|timesince }} ago</span>
     </nav>
     {% if cart %}
         {% include "cart/models/cart.html" %}
@@ -94,14 +97,6 @@
             rightArrow.style.pointerEvents = 'auto';
         }
         
-        // Debug logging (remove in production)
-        console.log('Scroll Debug:', {
-            scrollLeft: container.scrollLeft,
-            scrollWidth: container.scrollWidth,
-            clientWidth: container.clientWidth,
-            maxScrollLeft: maxScrollLeft,
-            needsScroll: container.scrollWidth > container.clientWidth
-        });
     }
     
     // Scroll to active cart button

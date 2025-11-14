@@ -16,13 +16,12 @@ from .serializers import (
 from inventory.models import ProductVariant
 from django.views.generic import CreateView, UpdateView
 from django.urls import reverse
+
 # Template view for the main cart page
 from django.views.generic import TemplateView
 import logging, json
 
 logger = logging.getLogger(__name__)
-
-
 
 
 class CartMainPageView(TemplateView):
@@ -62,7 +61,26 @@ def getCartData(request, pk):
         )
 
         carts = Cart.objects.filter(status="OPEN").order_by("-created_at")
-        context = {"cart_list": cart_list, "cart": cart, "carts": carts}
+
+        # Calculate total selling price (sum of all items' MRP * quantity)
+        from django.db.models import Sum, F, ExpressionWrapper, DecimalField
+        from decimal import Decimal
+
+        total_selling_price = cart_list.aggregate(
+            total=Sum(
+                ExpressionWrapper(
+                    F("quantity") * F("product_variant__mrp"),
+                    output_field=DecimalField(max_digits=10, decimal_places=2),
+                )
+            )
+        )["total"] or Decimal("0.00")
+
+        context = {
+            "cart_list": cart_list,
+            "cart": cart,
+            "carts": carts,
+            "total_selling_price": total_selling_price,
+        }
     except Cart.DoesNotExist as e:
         # Redirect to main cart page if cart not found
         logger.error(f"Cart not found: {e}")
@@ -110,7 +128,9 @@ class EditCart(UpdateView):
 def auto_cart_create(request):
     """Auto create cart"""
 
-    carts = Cart.objects.filter(status="OPEN", created_by=request.user).order_by("-created_at")
+    carts = Cart.objects.filter(status="OPEN", created_by=request.user).order_by(
+        "-created_at"
+    )
 
     for cart in carts:
         if cart.get_item_count() == 0:
@@ -120,6 +140,7 @@ def auto_cart_create(request):
     cart = Cart.objects.create(name="Walk in", created_by=request.user)
     messages.success(request, "Cart created successfully")
     return redirect("cart:getCartData", pk=cart.id)
+
 
 # API Views for Cart Operations
 @api_view(["POST"])
@@ -161,10 +182,7 @@ def scan_barcode(request):
             cart_item, created = CartItem.objects.get_or_create(
                 cart=cart,
                 product_variant=product_variant,
-                defaults={
-                    "quantity": quantity,
-                    "price": product_variant.final_price
-                },
+                defaults={"quantity": quantity, "price": product_variant.final_price},
             )
 
             if not created:

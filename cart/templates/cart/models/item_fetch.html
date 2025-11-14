@@ -2,7 +2,11 @@
     <td>{{ item.product_variant.barcode }}</td>
     <td>{{ item.product_variant.product.name }}</td>
     <td>{{ item.product_variant.simple_name }}</td>
-    <td>{{ data.product_variant.mrp|currency }}</td>
+    <td class="price-toggle-cell"
+        data-selling-price="{{ item.product_variant.mrp }}"
+        data-purchase-price="{{ item.product_variant.purchase_price }}">
+        <span class="price-display">{{ item.product_variant.mrp|currency }}</span>
+    </td>
     <td>
         <input type="number"
                class="form-input quantity-input"
@@ -19,16 +23,14 @@
                min="0"
                step="0.01">
     </td>
+    <td class="discount-cell">{{ item.product_variant.discount_percentage|default:"0" }}%</td>
+    <td class="amount-cell">{{ item.amount|currency }}</td>
     <td>
-        <td>{{ item.product_variant.discount_percentage|default:"0" }}%</td>
-        <td class="amount-cell">{{ item.amount|currency }}</td>
-        <td>
-            <button class="btn btn-primary update-item-btn" data-item-id="{{ item.id }}">
-                <i class="fas fa-save"></i>
-            </button>
-            <button class="btn btn-danger delete-item-btn" data-item-id="{{ item.id }}">
-                <i class="fas fa-trash"></i>
-            </button>
-        </td>
+        <button class="btn btn-primary update-item-btn" data-item-id="{{ item.id }}">
+            <i class="fas fa-save"></i>
+        </button>
+        <button class="btn btn-danger delete-item-btn" data-item-id="{{ item.id }}">
+            <i class="fas fa-trash"></i>
+        </button>
     </td>
 </tr>

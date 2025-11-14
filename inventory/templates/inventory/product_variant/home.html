@@ -9,7 +9,7 @@
     <div class="page-header">
         <h2 class="heading page-title">Product Variants Management</h2>
         <div class="page-actions">
-            <a href="{% url 'inventory_variant:download_data' %}" class="btn">
+            <a href="#" id="downloadBtn" class="btn btn-primary">
                 <i class="fas fa-download"></i>
                 Download
             </a>
@@ -130,10 +130,6 @@
             </table>
     </div>
     
-    <!-- Pagination Wrapper - Outside table for better styling -->
-    <div class="pagination-wrapper" id="data_table_pagination">
-        <!-- Pagination will be loaded here via AJAX -->
-    </div>
 {% endblock content %}
 
 {% block extra_js %}
@@ -142,6 +138,7 @@
         urls = {
             fetch: '{% url "inventory_variant:fetch" %}',
             suggestions: '{% url "suggestions:product_variant_all" %}',
+            variants_pdf: '{% url "report:variants_pdf" %}',
         }
     </script>
     
@@ -190,6 +187,14 @@
                 placeholder: 'Loading variants...',
                 includeInputs: false
             });
+
+            const downloadBtn = document.getElementById('downloadBtn');
+            if (downloadBtn) {
+                downloadBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    downloadTablePDF('searchForm', 'data_table', urls.variants_pdf);
+                });
+            }
         });
     </script>
             
